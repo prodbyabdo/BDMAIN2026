@@ -15,15 +15,8 @@ function onOpen() {
     .addItem('Clear Formatting on Current Tab', 'clearCurrentTabFormatting')
     .addSeparator()
     .addItem('Create Filters', 'createLeadFilterViews')
-  addItem('send leads to dialer', 'createLeadFilterViews')
     .addToUi();
 }
-
-// trigger for 
-function triggerPullLeads() {
-  Benleadsssss.pullLeads();
-}
-
 // =============================================================================
 // SINGLE CONFIG POINT - rename the tab here and everything follows
 // QPP_FEEDBACK tab layout: col A = NPI | col B = CLASS | col C = FEEDBACK
