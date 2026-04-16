@@ -4,6 +4,13 @@
  * Ensures all hidden values are passed as Strings to avoid API errors.
  */
 function createLeadFilterViews() {
+  if (typeof runWithExecutionLog_ === 'function') {
+    return runWithExecutionLog_('createLeadFilterViews', { trigger: 'menu' }, _createLeadFilterViewsCore);
+  }
+  return _createLeadFilterViewsCore();
+}
+
+function _createLeadFilterViewsCore() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var mainSheet = ss.getSheetByName("MAIN");
   var labsSheet = ss.getSheetByName("LABS");

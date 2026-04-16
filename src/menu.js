@@ -33,6 +33,23 @@ const QPP_FEEDBACK_TAB = "QPP_FEEDBACK";
 //   No NPI/QPP  -> normal flag search
 // =============================================================================
 function runMasterSearch() {
+  if (typeof runWithExecutionLog_ === 'function') {
+    return runWithExecutionLog_('runMasterSearch', { trigger: 'menu' }, () => {
+      runMasterSearchCore_({
+        targetTabs: ["MAIN", "LABS"],
+        lookupTabs: [
+          { name: "Ben", tab: "Ben Flags" },
+          { name: "Jimmy", tab: "Jimmy Flags" },
+          { name: "Selene", tab: "Selene Flags" },
+          { name: "Jane", tab: "Jane Flags" },
+          { name: "NI", tab: "NI / Not Eligible" },
+          { name: "Dis/Wn", tab: "Disconnected" }
+        ],
+        toastSuffix: "MAIN & LABS"
+      });
+    });
+  }
+  
   runMasterSearchCore_({
     targetTabs: ["MAIN", "LABS"],
     lookupTabs: [
@@ -65,7 +82,15 @@ function runNewLabsMasterSearch() {
 }
 
 function runMasterSearchCore_(options) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      'Another search is running. Try again in 30s.', 'Busy', 5
+    );
+    return;
+  }
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
   const QPP_TAB_NAME = typeof QPP_FEEDBACK_TAB !== 'undefined' ? QPP_FEEDBACK_TAB : "QPP_FEEDBACK";
   const targetTabs = options.targetTabs || [];
   const lookupTabs = options.lookupTabs || [];
@@ -130,9 +155,6 @@ function runMasterSearchCore_(options) {
     console.timeEnd("LoadDeactivated");
   }
 
-  // Define qppFeedback to prevent runtime error since population block was removed
-  const qppFeedback = new Map();
-
   // Load CLIA Database
   const cliaNameSet = new Set();
   const cliaPhoneSet = new Set();
@@ -190,7 +212,6 @@ function runMasterSearchCore_(options) {
       }
 
       const isDeac = hasNpi && deactivatedNPIs.has(npi);
-      const qppCode = hasNpi ? qppFeedback.get(npi) : null;
 
       const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
       const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
@@ -202,9 +223,7 @@ function runMasterSearchCore_(options) {
 
       let colA = "";
       if (isDeac) {
-        colA = qppCode ? `DEAC | ${qppCode}` : "DEAC";
-      } else if (qppCode) {
-        colA = flagMatch ? `${qppCode} | ${flagMatch}` : qppCode;
+        colA = "DEAC";
       } else {
         colA = flagMatch || "";
       }
@@ -223,6 +242,17 @@ function runMasterSearchCore_(options) {
       outputRows.push(rowResult);
     }
 
+    _backupColumns(ss, sheet, tabName, numRows);
+
+    const currentLastRow = sheet.getLastRow();
+    if (currentLastRow - 1 !== numRows) {
+      ss.toast(
+        `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
+        '⚠️ Aborted', 10
+      );
+      return; // skip this tab, don't write
+    }
+
     // High-Speed Bulk Write
     sheet.getRange(2, 1, numRows, 3).setValues(outputRows);
     console.timeEnd(`Process_${tabName}`);
@@ -230,6 +260,9 @@ function runMasterSearchCore_(options) {
 
   console.timeEnd("MasterSearch_Total");
   ss.toast(`Search complete on ${toastSuffix}`, "Done");
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // =============================================================================
@@ -267,8 +300,27 @@ function searchPhoneFast(term, lookupTabs, lookupSets, meetingPhoneSet) {
 // =============================================================================
 // SHARED HELPERS
 // =============================================================================
+function _backupColumns(ss, sheet, tabName, numRows) {
+  const backupName = '_SEARCH_BACKUP';
+  let backup = ss.getSheetByName(backupName);
+  if (!backup) {
+    backup = ss.insertSheet(backupName);
+    backup.hideSheet();
+  }
+  // Clear previous backup
+  backup.clearContents();
+  // Write tab name as header
+  backup.getRange(1, 1).setValue(`Backup of ${tabName} @ ${new Date().toISOString()}`);
+  // Copy cols A-C
+  const data = sheet.getRange(2, 1, numRows, 3).getValues();
+  if (data.length > 0) {
+    backup.getRange(2, 1, data.length, 3).setValues(data);
+  }
+}
+
 function clean(val) {
   if (!val) return "";
+  if (val instanceof Date) return "";
   return String(val).toLowerCase().trim();
 }
 
@@ -278,6 +330,14 @@ function clean(val) {
 function capitalizeHeadersBatch() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
+  
+  const ALLOWED_TABS = ["MAIN", "LABS", "NEWLABS", "Ben Flags"];
+  const sheetName = sheet.getName();
+  if (!ALLOWED_TABS.includes(sheetName)) {
+    SpreadsheetApp.getUi().alert(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
+    return;
+  }
+  
   const range = sheet.getDataRange();
   const data = range.getValues();
   const headers = data[0];
@@ -372,7 +432,19 @@ function normalizeActiveSheetTimestamps() {
  * ACTION 2: Targeted logic for MAIN, LABS, etc.
  * Normalizes, Sorts Newest-to-Oldest, and keeps 1 per hour.
  */
+/**
+ * ACTION 2: Targeted logic for MAIN, LABS, etc.
+ * Normalizes, Sorts Newest-to-Oldest, and keeps 1 per hour.
+ * Note: Assumes America/New_York or user's appsscript.json timezone (Africa/Cairo)
+ */
 function normalizeAndReverseTimestamps() {
+  if (typeof runWithExecutionLog_ === 'function') {
+    return runWithExecutionLog_('normalizeAndReverseTimestamps', { trigger: 'menu' }, _normalizeAndReverseTimestampsCore);
+  }
+  return _normalizeAndReverseTimestampsCore();
+}
+
+function _normalizeAndReverseTimestampsCore() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const targetTabs = ["MAIN", "LABS", "Ben Flags", "NI / Not Eligible"];
   const timestampCol = 17; // Column Q
@@ -394,21 +466,24 @@ function normalizeAndReverseTimestamps() {
       // Split lines, normalize each, and filter out failures
       const lines = cellVal.split("\n").map(l => l.trim()).filter(l => l !== "");
 
-      const withDates = lines.map(line => {
+      const mapped = lines.map(line => {
         const normalized = smartNormalizer(line);
         // Create a date object for sorting logic
         const dateObj = new Date(normalized.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/, "$3-$1-$2").replace(" ", "T"));
         return { line: normalized, date: dateObj };
-      }).filter(item => !isNaN(item.date.getTime()));
+      });
+
+      const parseable = mapped.filter(item => !isNaN(item.date.getTime()));
+      const unparseable = mapped.filter(item => isNaN(item.date.getTime())).map(item => item.line);
 
       // Sort Newest First
-      withDates.sort((a, b) => b.date - a.date);
+      parseable.sort((a, b) => b.date - a.date);
 
       // Dedupe: Keep only the latest per hour
       const seenDateHour = new Set();
       const filteredLines = [];
 
-      withDates.forEach(item => {
+      parseable.forEach(item => {
         const dateHourKey = item.line.split(":")[0]; // e.g., "4/9/2026 22"
         if (!seenDateHour.has(dateHourKey)) {
           seenDateHour.add(dateHourKey);
@@ -416,7 +491,7 @@ function normalizeAndReverseTimestamps() {
         }
       });
 
-      const newVal = filteredLines.join("\n");
+      const newVal = [...filteredLines, ...unparseable].join("\n");
       if (newVal !== cellVal) {
         values[i][0] = newVal;
       }

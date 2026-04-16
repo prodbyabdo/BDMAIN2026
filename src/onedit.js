@@ -138,7 +138,7 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
         const lines = cellValue.split("\n");
         const lastLine = lines[lines.length - 1].trim();
 
-        const todayRegex = new RegExp(`\\b${month}\\/${day}\\b`);
+        const todayRegex = new RegExp(`(?:^|\\s|\\n)${month}\\/${day}(?:\\s|$|\\n)`);
         const lastLineHasToday = todayRegex.test(lastLine);
 
         if (!lastLineHasToday) {
@@ -149,13 +149,20 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
     }
 
     // ── PART 2: TIMESTAMP IN COLUMN Q (EVERYONE) ──────────────────────────
+    // Note: Timezone is dictated by appsscript.json - currently Africa/Cairo
     const formattedTS = Utilities.formatDate(now, Session.getScriptTimeZone(), "M/d/yyyy HH:mm:ss");
     updates[TIMESTAMP_COL] = existingTS ? formattedTS + "\n" + existingTS : formattedTS;
 
     // ── EXECUTE BATCH UPDATE ──────────────────────────────────────────────
-    // Apply updates if any exist
-    for (const [colIdx, val] of Object.entries(updates)) {
-      sheet.getRange(row, Number(colIdx)).setValue(val);
+    // Apply updates explicitly (timestamp first for safety)
+    const colFVal = updates[COMMENT_COL];
+    const colQVal = updates[TIMESTAMP_COL];
+
+    if (colQVal !== undefined) {
+      sheet.getRange(row, TIMESTAMP_COL).setValue(colQVal);
+    }
+    if (colFVal !== undefined) {
+      sheet.getRange(row, COMMENT_COL).setValue(colFVal);
     }
 
     logAction("SUCCESS", sheetName, row, "Edit processed in Col F", user);
@@ -186,7 +193,7 @@ function _handleLeadRouting(e, sheet, sheetName, row, headerMap, leadCol) {
     Logger.log(`Duplicate trigger blocked for key: "${lockKey}"`);
     return;
   }
-  cache.put(lockKey, 'running', 60);
+  cache.put(lockKey, 'running', 300);
 
   // Helper: lookup from local batch data
   const val = (headerName) => {
@@ -281,6 +288,10 @@ function logAction(status, sheetName, row, message, user) {
       logSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       logSheet.getRange("A1:F1").setFontWeight("bold").setBackground("#f3f3f3");
       logSheet.setFrozenRows(1);
+      
+      const protection = logSheet.protect().setDescription('Only owner can edit LOGS');
+      protection.removeEditors(protection.getEditors());
+      if (protection.canDomainEdit()) protection.setDomainEdit(false);
     }
 
     const lastRow = logSheet.getLastRow();

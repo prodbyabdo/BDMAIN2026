@@ -6,6 +6,12 @@ function getnpi(input, fields = "company,person,position,phone") {
     const match = input.toString().match(/(\d{10})/);
     if (!match) return "Invalid NPI";
     const npi = match[1];
+    
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `npi_${npi}_${fields}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
     const apiUrl = `https://npiregistry.cms.hhs.gov/api/?number=${npi}&version=2.1`;
     try {
         const response = UrlFetchApp.fetch(apiUrl);
@@ -28,7 +34,9 @@ function getnpi(input, fields = "company,person,position,phone") {
         const requested = fields.toLowerCase().split(",").map(f => f.trim());
         const output = requested.map(f => fieldValues[f] || "");
         // Return single string if 1 field, or a horizontal array if multiple
-        return output.length === 1 ? output[0] : [output];
+        const finalResult = output.length === 1 ? output[0] : [output];
+        cache.put(cacheKey, JSON.stringify(finalResult), 21600); // 6 hours
+        return finalResult;
 
     } catch (err) {
         console.error(err);
