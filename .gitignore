@@ -34,6 +34,10 @@ yarn-error.log*
 # docs
 /docs
 /data
+/Project_Comprehensive_Summary.md
+/Project Environment & Constraint Summary.md
+/implementation_planssasa.md
+/implementation_plan 15 4 26.md
 
 #clia
 /Provider of Services File - Clinical Laboratories
