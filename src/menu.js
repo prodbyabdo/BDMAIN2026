@@ -334,7 +334,7 @@ function capitalizeHeadersBatch() {
   const ALLOWED_TABS = ["MAIN", "LABS", "NEWLABS", "Ben Flags"];
   const sheetName = sheet.getName();
   if (!ALLOWED_TABS.includes(sheetName)) {
-    SpreadsheetApp.getUi().alert(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
+    SpreadsheetApp.getUi().toast(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
     return;
   }
   
@@ -350,7 +350,7 @@ function capitalizeHeadersBatch() {
   });
 
   if (columnIndices.length === 0) {
-    SpreadsheetApp.getUi().alert('Target columns not found on this tab.');
+    SpreadsheetApp.getUi().toast('Target columns not found on this tab.');
     return;
   }
   for (let i = 1; i < data.length; i++) {
@@ -383,7 +383,7 @@ function reformatPhoneNumbers() {
       range.setValues(newValues);
     });
   });
-  SpreadsheetApp.getUi().alert('Phone numbers formatted on MAIN and LABS.');
+  SpreadsheetApp.getUi().toast('Phone numbers formatted on MAIN and LABS.');
 }
 
 function unmergeAllCells() {
@@ -421,11 +421,15 @@ function normalizeActiveSheetTimestamps() {
   }
 
   if (changesMade > 0) {
-    range.setValues(values);
-    SpreadsheetApp.getUi().alert(`Success: ${changesMade} cells normalized.`);
-  } else {
-    SpreadsheetApp.getUi().alert('No timestamps needed normalization.');
-  }
+  range.setValues(values);
+  
+  // Display a toast: .toast(message, title, timeoutSeconds)
+  SpreadsheetApp.getActiveSpreadsheet().toast(`${changesMade} cells normalized.`, 'Task Complete', 5);
+  
+} else {
+  // If no changes, maybe a shorter toast or none at all
+  SpreadsheetApp.getActiveSpreadsheet().toast('No timestamps needed normalization.', 'Status', 3);
+}
 }
 
 /**
@@ -499,7 +503,7 @@ function _normalizeAndReverseTimestampsCore() {
 
     range.setValues(values);
   });
-  SpreadsheetApp.getUi().alert('Deduplication and Reversal complete.');
+  SpreadsheetApp.getActiveSpreadsheet().toast('Deduplication and Reversal complete.', 'Process Status', 5);
 }
 
 /**
