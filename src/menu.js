@@ -49,7 +49,7 @@ function runMasterSearch() {
       });
     });
   }
-  
+
   runMasterSearchCore_({
     targetTabs: ["MAIN", "LABS"],
     lookupTabs: [
@@ -66,7 +66,7 @@ function runMasterSearch() {
 
 function runNewLabsMasterSearch() {
   runMasterSearchCore_({
-    targetTabs: ["NEWLABS",],
+    targetTabs: ["NEWLABS", "NEWDME"],
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
@@ -75,9 +75,11 @@ function runNewLabsMasterSearch() {
       { name: "NI", tab: "NI / Not Eligible" },
       { name: "Dis/Wn", tab: "Disconnected" },
       { name: "MAIN", tab: "MAIN" },
-      { name: "LABS", tab: "LABS" }
+      { name: "LABS", tab: "LABS" },
+      { name: "NEWLABS", tab: "NEWLABS" },
+      { name: "NEWDME", tab: "NEWDME" }
     ],
-    toastSuffix: "NEWLABS"
+    toastSuffix: "NEWLABS & NEWDME"
   });
 }
 
@@ -91,175 +93,175 @@ function runMasterSearchCore_(options) {
   }
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const QPP_TAB_NAME = typeof QPP_FEEDBACK_TAB !== 'undefined' ? QPP_FEEDBACK_TAB : "QPP_FEEDBACK";
-  const targetTabs = options.targetTabs || [];
-  const lookupTabs = options.lookupTabs || [];
-  const toastSuffix = options.toastSuffix || targetTabs.join(" & ");
+    const QPP_TAB_NAME = typeof QPP_FEEDBACK_TAB !== 'undefined' ? QPP_FEEDBACK_TAB : "QPP_FEEDBACK";
+    const targetTabs = options.targetTabs || [];
+    const lookupTabs = options.lookupTabs || [];
+    const toastSuffix = options.toastSuffix || targetTabs.join(" & ");
 
-  console.time("MasterSearch_Total");
+    console.time("MasterSearch_Total");
 
-  // ---------------------------------------------------------------------------
-  // 1. Config & Data Loading
-  // ---------------------------------------------------------------------------
-  ss.toast("Loading lookup data...", "Search", 2);
+    // ---------------------------------------------------------------------------
+    // 1. Config & Data Loading
+    // ---------------------------------------------------------------------------
+    ss.toast("Loading lookup data...", "Search", 2);
 
-  // Load raw data for lookup tabs (small, fast)
-  const lookupData = {};
-  lookupTabs.forEach(config => {
-    const sheet = ss.getSheetByName(config.tab);
-    if (sheet && sheet.getLastRow() >= 2) {
-      lookupData[config.name] = sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getValues();
-    } else {
-      lookupData[config.name] = [];
-    }
-  });
-
-  // PRE-BUILD LOOKUP SETS
-  const lookupSets = {};
-  lookupTabs.forEach(config => {
-    const data = lookupData[config.name];
-    const nameSet = new Set();
-    const phone1Set = new Set();
-    const phone2Set = new Set();
-    for (let r = 0; r < data.length; r++) {
-      const row = data[r];
-      if (row[7]) nameSet.add(String(row[7]).toLowerCase().trim());
-      if (row[9]) phone1Set.add(String(row[9]).toLowerCase().trim());
-      if (row[11]) phone2Set.add(String(row[11]).toLowerCase().trim());
-    }
-    lookupSets[config.name] = { name: nameSet, phone1: phone1Set, phone2: phone2Set };
-  });
-
-  // Build meeting data lookups (IMPORT_DATA)
-  let meetingNameSet = new Set();
-  let meetingPhoneSet = new Set();
-  const importSheet = ss.getSheetByName("IMPORT_DATA");
-  if (importSheet && importSheet.getLastRow() >= 2) {
-    const meetingData = importSheet.getRange(2, 1, importSheet.getLastRow() - 1, 16).getValues();
-    for (let r = 0; r < meetingData.length; r++) {
-      if (meetingData[r][14]) meetingNameSet.add(String(meetingData[r][14]).toLowerCase().trim());
-      if (meetingData[r][15]) meetingPhoneSet.add(String(meetingData[r][15]).toLowerCase().trim());
-    }
-  }
-
-  // Load Deactivated NPIs (potentially huge)
-  const deactivatedNPIs = new Set();
-  const deacSheet = ss.getSheetByName("Deactivated");
-  if (deacSheet && deacSheet.getLastRow() >= 2) {
-    console.time("LoadDeactivated");
-    const deacValues = deacSheet.getRange(2, 15, deacSheet.getLastRow() - 1, 1).getValues();
-    for (let r = 0; r < deacValues.length; r++) {
-      const sNpi = String(deacValues[r][0] || "").trim();
-      if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
-    }
-    console.timeEnd("LoadDeactivated");
-  }
-
-  // Load CLIA Database
-  const cliaNameSet = new Set();
-  const cliaPhoneSet = new Set();
-  const cliaSheet = ss.getSheetByName("CLIA");
-  if (cliaSheet && cliaSheet.getLastRow() >= 2) {
-    console.time("LoadCLIA");
-    // Fetch up to col 25 to securely get index 11 (FAC_NAME) and 24 (PHNE_NUM)
-    const cliaData = cliaSheet.getRange(2, 1, cliaSheet.getLastRow() - 1, 26).getValues();
-    for (let r = 0; r < cliaData.length; r++) {
-      const name = clean(cliaData[r][11]);
-      const phone = clean(cliaData[r][24]);
-      if (name) cliaNameSet.add(name);
-      if (phone) cliaPhoneSet.add(phone);
-    }
-    console.timeEnd("LoadCLIA");
-  }
-
-  // ---------------------------------------------------------------------------
-  // 2. Determine Tabs to Scan
-  // ---------------------------------------------------------------------------
-  ss.toast(`Scanning ${toastSuffix}...`, "Search");
-
-  // ---------------------------------------------------------------------------
-  // 3. Process Each Tab
-  // ---------------------------------------------------------------------------
-  const processedCache = new Map();
-
-  targetTabs.forEach(tabName => {
-    const sheet = ss.getSheetByName(tabName);
-    if (!sheet || sheet.getLastRow() < 2) return;
-
-    const numRows = sheet.getLastRow() - 1;
-    console.time(`Process_${tabName}`);
-
-    // Batch fetch primary data
-    const searchValues = sheet.getRange(2, 8, numRows, 8).getValues(); // H to O
-    const colDValues = sheet.getRange(2, 4, numRows, 1).getValues();   // D (Owner)
-
-    const outputRows = [];
-
-    for (let i = 0; i < numRows; i++) {
-      const npi = String(searchValues[i][7] || "").trim();
-      const colD = String(colDValues[i][0] || "").trim();
-      const hasNpi = npi && npi !== "0";
-
-      const termH = clean(searchValues[i][0]);
-      const termJ = clean(searchValues[i][2]);
-      const termL = clean(searchValues[i][4]);
-
-      // Cache Check: If already processed this exact lead, skip to save CPU
-      const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
-      if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
-        outputRows.push(processedCache.get(cacheKey));
-        continue;
-      }
-
-      const isDeac = hasNpi && deactivatedNPIs.has(npi);
-
-      const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
-      const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
-      const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
-
-      const isClia = (termH && cliaNameSet.has(termH)) ||
-        (termJ && cliaPhoneSet.has(termJ)) ||
-        (termL && cliaPhoneSet.has(termL));
-
-      let colA = "";
-      if (isDeac) {
-        colA = "DEAC";
+    // Load raw data for lookup tabs (small, fast)
+    const lookupData = {};
+    lookupTabs.forEach(config => {
+      const sheet = ss.getSheetByName(config.tab);
+      if (sheet && sheet.getLastRow() >= 2) {
+        lookupData[config.name] = sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getValues();
       } else {
-        colA = flagMatch || "";
+        lookupData[config.name] = [];
       }
+    });
 
-      if (isClia) {
-        colA = colA ? `${colA} | CLIA` : "CLIA";
+    // PRE-BUILD LOOKUP SETS
+    const lookupSets = {};
+    lookupTabs.forEach(config => {
+      const data = lookupData[config.name];
+      const nameSet = new Set();
+      const phone1Set = new Set();
+      const phone2Set = new Set();
+      for (let r = 0; r < data.length; r++) {
+        const row = data[r];
+        if (row[7]) nameSet.add(String(row[7]).toLowerCase().trim());
+        if (row[9]) phone1Set.add(String(row[9]).toLowerCase().trim());
+        if (row[11]) phone2Set.add(String(row[11]).toLowerCase().trim());
       }
+      lookupSets[config.name] = { name: nameSet, phone1: phone1Set, phone2: phone2Set };
+    });
 
-      const rowResult = [colA, phone1Match, phone2Match];
-
-      // Save to cache
-      if (npi || termH || termJ || termL) {
-        processedCache.set(cacheKey, rowResult);
+    // Build meeting data lookups (IMPORT_DATA)
+    let meetingNameSet = new Set();
+    let meetingPhoneSet = new Set();
+    const importSheet = ss.getSheetByName("IMPORT_DATA");
+    if (importSheet && importSheet.getLastRow() >= 2) {
+      const meetingData = importSheet.getRange(2, 1, importSheet.getLastRow() - 1, 16).getValues();
+      for (let r = 0; r < meetingData.length; r++) {
+        if (meetingData[r][14]) meetingNameSet.add(String(meetingData[r][14]).toLowerCase().trim());
+        if (meetingData[r][15]) meetingPhoneSet.add(String(meetingData[r][15]).toLowerCase().trim());
       }
-
-      outputRows.push(rowResult);
     }
 
-    _backupColumns(ss, sheet, tabName, numRows);
-
-    const currentLastRow = sheet.getLastRow();
-    if (currentLastRow - 1 !== numRows) {
-      ss.toast(
-        `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
-        '⚠️ Aborted', 10
-      );
-      return; // skip this tab, don't write
+    // Load Deactivated NPIs (potentially huge)
+    const deactivatedNPIs = new Set();
+    const deacSheet = ss.getSheetByName("Deactivated");
+    if (deacSheet && deacSheet.getLastRow() >= 2) {
+      console.time("LoadDeactivated");
+      const deacValues = deacSheet.getRange(2, 15, deacSheet.getLastRow() - 1, 1).getValues();
+      for (let r = 0; r < deacValues.length; r++) {
+        const sNpi = String(deacValues[r][0] || "").trim();
+        if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
+      }
+      console.timeEnd("LoadDeactivated");
     }
 
-    // High-Speed Bulk Write
-    sheet.getRange(2, 1, numRows, 3).setValues(outputRows);
-    console.timeEnd(`Process_${tabName}`);
-  });
+    // Load CLIA Database
+    const cliaNameSet = new Set();
+    const cliaPhoneSet = new Set();
+    const cliaSheet = ss.getSheetByName("CLIA");
+    if (cliaSheet && cliaSheet.getLastRow() >= 2) {
+      console.time("LoadCLIA");
+      // Fetch up to col 25 to securely get index 11 (FAC_NAME) and 24 (PHNE_NUM)
+      const cliaData = cliaSheet.getRange(2, 1, cliaSheet.getLastRow() - 1, 26).getValues();
+      for (let r = 0; r < cliaData.length; r++) {
+        const name = clean(cliaData[r][11]);
+        const phone = clean(cliaData[r][24]);
+        if (name) cliaNameSet.add(name);
+        if (phone) cliaPhoneSet.add(phone);
+      }
+      console.timeEnd("LoadCLIA");
+    }
 
-  console.timeEnd("MasterSearch_Total");
-  ss.toast(`Search complete on ${toastSuffix}`, "Done");
+    // ---------------------------------------------------------------------------
+    // 2. Determine Tabs to Scan
+    // ---------------------------------------------------------------------------
+    ss.toast(`Scanning ${toastSuffix}...`, "Search");
+
+    // ---------------------------------------------------------------------------
+    // 3. Process Each Tab
+    // ---------------------------------------------------------------------------
+    const processedCache = new Map();
+
+    targetTabs.forEach(tabName => {
+      const sheet = ss.getSheetByName(tabName);
+      if (!sheet || sheet.getLastRow() < 2) return;
+
+      const numRows = sheet.getLastRow() - 1;
+      console.time(`Process_${tabName}`);
+
+      // Batch fetch primary data
+      const searchValues = sheet.getRange(2, 8, numRows, 8).getValues(); // H to O
+      const colDValues = sheet.getRange(2, 4, numRows, 1).getValues();   // D (Owner)
+
+      const outputRows = [];
+
+      for (let i = 0; i < numRows; i++) {
+        const npi = String(searchValues[i][7] || "").trim();
+        const colD = String(colDValues[i][0] || "").trim();
+        const hasNpi = npi && npi !== "0";
+
+        const termH = clean(searchValues[i][0]);
+        const termJ = clean(searchValues[i][2]);
+        const termL = clean(searchValues[i][4]);
+
+        // Cache Check: If already processed this exact lead, skip to save CPU
+        const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
+        if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
+          outputRows.push(processedCache.get(cacheKey));
+          continue;
+        }
+
+        const isDeac = hasNpi && deactivatedNPIs.has(npi);
+
+        const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
+        const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
+        const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
+
+        const isClia = (termH && cliaNameSet.has(termH)) ||
+          (termJ && cliaPhoneSet.has(termJ)) ||
+          (termL && cliaPhoneSet.has(termL));
+
+        let colA = "";
+        if (isDeac) {
+          colA = "DEAC";
+        } else {
+          colA = flagMatch || "";
+        }
+
+        if (isClia) {
+          colA = colA ? `${colA} | CLIA` : "CLIA";
+        }
+
+        const rowResult = [colA, phone1Match, phone2Match];
+
+        // Save to cache
+        if (npi || termH || termJ || termL) {
+          processedCache.set(cacheKey, rowResult);
+        }
+
+        outputRows.push(rowResult);
+      }
+
+      _backupColumns(ss, sheet, tabName, numRows);
+
+      const currentLastRow = sheet.getLastRow();
+      if (currentLastRow - 1 !== numRows) {
+        ss.toast(
+          `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
+          '⚠️ Aborted', 10
+        );
+        return; // skip this tab, don't write
+      }
+
+      // High-Speed Bulk Write
+      sheet.getRange(2, 1, numRows, 3).setValues(outputRows);
+      console.timeEnd(`Process_${tabName}`);
+    });
+
+    console.timeEnd("MasterSearch_Total");
+    ss.toast(`Search complete on ${toastSuffix}`, "Done");
   } finally {
     lock.releaseLock();
   }
@@ -330,14 +332,14 @@ function clean(val) {
 function capitalizeHeadersBatch() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
-  
-  const ALLOWED_TABS = ["MAIN", "LABS", "NEWLABS", "Ben Flags"];
+
+  const ALLOWED_TABS = ["MAIN", "LABS", "NEWLABS", "NEWDME", "Ben Flags"];
   const sheetName = sheet.getName();
   if (!ALLOWED_TABS.includes(sheetName)) {
     SpreadsheetApp.getUi().toast(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
     return;
   }
-  
+
   const range = sheet.getDataRange();
   const data = range.getValues();
   const headers = data[0];
@@ -365,7 +367,7 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS"];
+  const targetTabs = ["MAIN", "LABS", "NEWLABS", "NEWDME"];
   const columnIndices = [10, 12];
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
@@ -421,15 +423,15 @@ function normalizeActiveSheetTimestamps() {
   }
 
   if (changesMade > 0) {
-  range.setValues(values);
-  
-  // Display a toast: .toast(message, title, timeoutSeconds)
-  SpreadsheetApp.getActiveSpreadsheet().toast(`${changesMade} cells normalized.`, 'Task Complete', 5);
-  
-} else {
-  // If no changes, maybe a shorter toast or none at all
-  SpreadsheetApp.getActiveSpreadsheet().toast('No timestamps needed normalization.', 'Status', 3);
-}
+    range.setValues(values);
+
+    // Display a toast: .toast(message, title, timeoutSeconds)
+    SpreadsheetApp.getActiveSpreadsheet().toast(`${changesMade} cells normalized.`, 'Task Complete', 5);
+
+  } else {
+    // If no changes, maybe a shorter toast or none at all
+    SpreadsheetApp.getActiveSpreadsheet().toast('No timestamps needed normalization.', 'Status', 3);
+  }
 }
 
 /**
@@ -450,7 +452,7 @@ function normalizeAndReverseTimestamps() {
 
 function _normalizeAndReverseTimestampsCore() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS", "Ben Flags", "NI / Not Eligible"];
+  const targetTabs = ["MAIN", "LABS", "NEWLABS", "NEWDME", "Ben Flags", "NI / Not Eligible"];
   const timestampCol = 17; // Column Q
 
   targetTabs.forEach(tabName => {
