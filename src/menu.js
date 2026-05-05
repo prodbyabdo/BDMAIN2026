@@ -75,9 +75,7 @@ function runNewLabsMasterSearch() {
       { name: "NI", tab: "NI / Not Eligible" },
       { name: "Dis/Wn", tab: "Disconnected" },
       { name: "MAIN", tab: "MAIN" },
-      { name: "LABS", tab: "LABS" },
-      { name: "NEWLABS", tab: "NEWLABS" },
-      { name: "NEWDME", tab: "NEWDME" }
+      { name: "LABS", tab: "LABS" }
     ],
     toastSuffix: "NEWLABS & NEWDME"
   });
@@ -367,7 +365,7 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS", "NEWLABS", "NEWDME"];
+  const targetTabs = ["MAIN", "LABS"];
   const columnIndices = [10, 12];
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
@@ -452,7 +450,7 @@ function normalizeAndReverseTimestamps() {
 
 function _normalizeAndReverseTimestampsCore() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS", "NEWLABS", "NEWDME", "Ben Flags", "NI / Not Eligible"];
+  const targetTabs = ["MAIN", "LABS", "Ben Flags", "NI / Not Eligible"];
   const timestampCol = 17; // Column Q
 
   targetTabs.forEach(tabName => {
