@@ -103,12 +103,19 @@ function runMasterSearchCore_(options) {
     // ---------------------------------------------------------------------------
     ss.toast("Loading lookup data...", "Search", 2);
 
-    // Load raw data for lookup tabs (small, fast)
+    // Load raw data for lookup tabs (Optimized: fetching only cols H to L, which is 8 to 12)
     const lookupData = {};
     lookupTabs.forEach(config => {
       const sheet = ss.getSheetByName(config.tab);
       if (sheet && sheet.getLastRow() >= 2) {
-        lookupData[config.name] = sheet.getRange(2, 1, sheet.getLastRow() - 1, 18).getValues();
+        const lastCol = sheet.getLastColumn();
+        if (lastCol >= 12) {
+          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, 5).getValues();
+        } else if (lastCol >= 8) {
+          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, lastCol - 7).getValues();
+        } else {
+          lookupData[config.name] = [];
+        }
       } else {
         lookupData[config.name] = [];
       }
@@ -123,9 +130,9 @@ function runMasterSearchCore_(options) {
       const phone2Set = new Set();
       for (let r = 0; r < data.length; r++) {
         const row = data[r];
-        if (row[7]) nameSet.add(String(row[7]).toLowerCase().trim());
-        if (row[9]) phone1Set.add(String(row[9]).toLowerCase().trim());
-        if (row[11]) phone2Set.add(String(row[11]).toLowerCase().trim());
+        if (row[0]) nameSet.add(String(row[0]).toLowerCase().trim());
+        if (row.length > 2 && row[2]) phone1Set.add(String(row[2]).toLowerCase().trim());
+        if (row.length > 4 && row[4]) phone2Set.add(String(row[4]).toLowerCase().trim());
       }
       lookupSets[config.name] = { name: nameSet, phone1: phone1Set, phone2: phone2Set };
     });
@@ -135,10 +142,13 @@ function runMasterSearchCore_(options) {
     let meetingPhoneSet = new Set();
     const importSheet = ss.getSheetByName("IMPORT_DATA");
     if (importSheet && importSheet.getLastRow() >= 2) {
-      const meetingData = importSheet.getRange(2, 1, importSheet.getLastRow() - 1, 16).getValues();
-      for (let r = 0; r < meetingData.length; r++) {
-        if (meetingData[r][14]) meetingNameSet.add(String(meetingData[r][14]).toLowerCase().trim());
-        if (meetingData[r][15]) meetingPhoneSet.add(String(meetingData[r][15]).toLowerCase().trim());
+      const lastCol = importSheet.getLastColumn();
+      if (lastCol >= 16) {
+        const meetingData = importSheet.getRange(2, 15, importSheet.getLastRow() - 1, 2).getValues();
+        for (let r = 0; r < meetingData.length; r++) {
+          if (meetingData[r][0]) meetingNameSet.add(String(meetingData[r][0]).toLowerCase().trim());
+          if (meetingData[r][1]) meetingPhoneSet.add(String(meetingData[r][1]).toLowerCase().trim());
+        }
       }
     }
 
@@ -155,19 +165,25 @@ function runMasterSearchCore_(options) {
       console.timeEnd("LoadDeactivated");
     }
 
-    // Load CLIA Database
+    // Load CLIA Database (Optimized: fetching only col 12 and 25)
     const cliaNameSet = new Set();
     const cliaPhoneSet = new Set();
     const cliaSheet = ss.getSheetByName("CLIA");
     if (cliaSheet && cliaSheet.getLastRow() >= 2) {
       console.time("LoadCLIA");
-      // Fetch up to col 25 to securely get index 11 (FAC_NAME) and 24 (PHNE_NUM)
-      const cliaData = cliaSheet.getRange(2, 1, cliaSheet.getLastRow() - 1, 26).getValues();
-      for (let r = 0; r < cliaData.length; r++) {
-        const name = clean(cliaData[r][11]);
-        const phone = clean(cliaData[r][24]);
-        if (name) cliaNameSet.add(name);
-        if (phone) cliaPhoneSet.add(phone);
+      const numRows = cliaSheet.getLastRow() - 1;
+      const lastCol = cliaSheet.getLastColumn();
+      if (lastCol >= 12) {
+        const cliaNames = cliaSheet.getRange(2, 12, numRows, 1).getValues();
+        const cliaPhones = lastCol >= 25 ? cliaSheet.getRange(2, 25, numRows, 1).getValues() : null;
+        for (let r = 0; r < numRows; r++) {
+          const name = clean(cliaNames[r][0]);
+          if (name) cliaNameSet.add(name);
+          if (cliaPhones) {
+            const phone = clean(cliaPhones[r][0]);
+            if (phone) cliaPhoneSet.add(phone);
+          }
+        }
       }
       console.timeEnd("LoadCLIA");
     }
@@ -189,72 +205,80 @@ function runMasterSearchCore_(options) {
       const numRows = sheet.getLastRow() - 1;
       console.time(`Process_${tabName}`);
 
-      // Batch fetch primary data
-      const searchValues = sheet.getRange(2, 8, numRows, 8).getValues(); // H to O
-      const colDValues = sheet.getRange(2, 4, numRows, 1).getValues();   // D (Owner)
-
-      const outputRows = [];
-
-      for (let i = 0; i < numRows; i++) {
-        const npi = String(searchValues[i][7] || "").trim();
-        const colD = String(colDValues[i][0] || "").trim();
-        const hasNpi = npi && npi !== "0";
-
-        const termH = clean(searchValues[i][0]);
-        const termJ = clean(searchValues[i][2]);
-        const termL = clean(searchValues[i][4]);
-
-        // Cache Check: If already processed this exact lead, skip to save CPU
-        const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
-        if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
-          outputRows.push(processedCache.get(cacheKey));
-          continue;
-        }
-
-        const isDeac = hasNpi && deactivatedNPIs.has(npi);
-
-        const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
-        const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
-        const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
-
-        const isClia = (termH && cliaNameSet.has(termH)) ||
-          (termJ && cliaPhoneSet.has(termJ)) ||
-          (termL && cliaPhoneSet.has(termL));
-
-        let colA = "";
-        if (isDeac) {
-          colA = "DEAC";
-        } else {
-          colA = flagMatch || "";
-        }
-
-        if (isClia) {
-          colA = colA ? `${colA} | CLIA` : "CLIA";
-        }
-
-        const rowResult = [colA, phone1Match, phone2Match];
-
-        // Save to cache
-        if (npi || termH || termJ || termL) {
-          processedCache.set(cacheKey, rowResult);
-        }
-
-        outputRows.push(rowResult);
-      }
-
       _backupColumns(ss, sheet, tabName, numRows);
 
-      const currentLastRow = sheet.getLastRow();
-      if (currentLastRow - 1 !== numRows) {
-        ss.toast(
-          `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
-          '⚠️ Aborted', 10
-        );
-        return; // skip this tab, don't write
+      const chunkSize = 5000;
+      for (let chunkStart = 0; chunkStart < numRows; chunkStart += chunkSize) {
+        const chunkRowCount = Math.min(chunkSize, numRows - chunkStart);
+        const startRow = chunkStart + 2;
+
+        // Batch fetch primary data in chunks to prevent timeout
+        const searchValues = sheet.getRange(startRow, 8, chunkRowCount, 8).getValues(); // H to O
+        const colDValues = sheet.getRange(startRow, 4, chunkRowCount, 1).getValues();   // D (Owner)
+
+        const outputRows = [];
+
+        for (let i = 0; i < chunkRowCount; i++) {
+          const npi = String(searchValues[i][7] || "").trim();
+          const colD = String(colDValues[i][0] || "").trim();
+          const hasNpi = npi && npi !== "0";
+
+          const termH = clean(searchValues[i][0]);
+          const termJ = clean(searchValues[i][2]);
+          const termL = clean(searchValues[i][4]);
+
+          // Cache Check: If already processed this exact lead, skip to save CPU
+          const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
+          if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
+            outputRows.push(processedCache.get(cacheKey));
+            continue;
+          }
+
+          const isDeac = hasNpi && deactivatedNPIs.has(npi);
+
+          const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
+          const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
+          const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
+
+          const isClia = (termH && cliaNameSet.has(termH)) ||
+            (termJ && cliaPhoneSet.has(termJ)) ||
+            (termL && cliaPhoneSet.has(termL));
+
+          let colA = "";
+          if (isDeac) {
+            colA = "DEAC";
+          } else {
+            colA = flagMatch || "";
+          }
+
+          if (isClia) {
+            colA = colA ? `${colA} | CLIA` : "CLIA";
+          }
+
+          const rowResult = [colA, phone1Match, phone2Match];
+
+          // Save to cache
+          if (npi || termH || termJ || termL) {
+            processedCache.set(cacheKey, rowResult);
+          }
+
+          outputRows.push(rowResult);
+        }
+
+        const currentLastRow = sheet.getLastRow();
+        if (currentLastRow - 1 !== numRows) {
+          ss.toast(
+            `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
+            '⚠️ Aborted', 10
+          );
+          return; // skip this tab, don't write
+        }
+
+        // High-Speed Bulk Write in chunks
+        sheet.getRange(startRow, 1, chunkRowCount, 3).setValues(outputRows);
+        SpreadsheetApp.flush();
       }
 
-      // High-Speed Bulk Write
-      sheet.getRange(2, 1, numRows, 3).setValues(outputRows);
       console.timeEnd(`Process_${tabName}`);
     });
 
@@ -311,10 +335,17 @@ function _backupColumns(ss, sheet, tabName, numRows) {
   backup.clearContents();
   // Write tab name as header
   backup.getRange(1, 1).setValue(`Backup of ${tabName} @ ${new Date().toISOString()}`);
-  // Copy cols A-C
-  const data = sheet.getRange(2, 1, numRows, 3).getValues();
-  if (data.length > 0) {
-    backup.getRange(2, 1, data.length, 3).setValues(data);
+  
+  // Copy cols A-C in chunks to prevent timeout
+  const chunkSize = 5000;
+  for (let chunkStart = 0; chunkStart < numRows; chunkStart += chunkSize) {
+    const chunkRowCount = Math.min(chunkSize, numRows - chunkStart);
+    const startRow = chunkStart + 2;
+    const data = sheet.getRange(startRow, 1, chunkRowCount, 3).getValues();
+    if (data.length > 0) {
+      backup.getRange(startRow, 1, data.length, 3).setValues(data);
+      SpreadsheetApp.flush();
+    }
   }
 }
 

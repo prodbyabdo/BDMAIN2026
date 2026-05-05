@@ -17,7 +17,7 @@ function _createLeadFilterViewsCore() {
   var refSheet = ss.getSheetByName("ReferenceToCancel");
 
   if (!mainSheet || !labsSheet || !refSheet) {
-    SpreadsheetApp.getUi().alert("Error: One of the tabs (MAIN, LABS, or ReferenceToCancel) is missing.");
+    SpreadsheetApp.getActiveSpreadsheet().alert("Error: One of the tabs (MAIN, LABS, or ReferenceToCancel) is missing.");
     return;
   }
 
@@ -111,9 +111,9 @@ function _createLeadFilterViewsCore() {
 
   try {
     Sheets.Spreadsheets.batchUpdate({ "requests": requests }, ssId);
-    SpreadsheetApp.getUi().alert("Filters Recreated successfully with split-word logic.");
+    SpreadsheetApp.getActiveSpreadsheet().alert("Filters Recreated successfully with split-word logic.");
   } catch (e) {
     Logger.log(e.message);
-    SpreadsheetApp.getUi().alert("Error: " + e.message);
+    SpreadsheetApp.getActiveSpreadsheet().alert("Error: " + e.message);
   }
 }
