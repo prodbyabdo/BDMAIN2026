@@ -334,7 +334,7 @@ function capitalizeHeadersBatch() {
   const ALLOWED_TABS = ["MAIN", "LABS", "NEWLABS", "NEWDME", "Ben Flags"];
   const sheetName = sheet.getName();
   if (!ALLOWED_TABS.includes(sheetName)) {
-    SpreadsheetApp.getUi().toast(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
+    SpreadsheetApp.getActiveSpreadsheet().toast(`Capitalize not allowed on "${sheetName}". Use on: ${ALLOWED_TABS.join(", ")}`);
     return;
   }
 
@@ -350,7 +350,7 @@ function capitalizeHeadersBatch() {
   });
 
   if (columnIndices.length === 0) {
-    SpreadsheetApp.getUi().toast('Target columns not found on this tab.');
+    SpreadsheetApp.getActiveSpreadsheet().toast('Target columns not found on this tab.');
     return;
   }
   for (let i = 1; i < data.length; i++) {
@@ -383,7 +383,7 @@ function reformatPhoneNumbers() {
       range.setValues(newValues);
     });
   });
-  SpreadsheetApp.getUi().toast('Phone numbers formatted on MAIN and LABS.');
+  SpreadsheetApp.getActiveSpreadsheet().toast('Phone numbers formatted on MAIN and LABS.');
 }
 
 function unmergeAllCells() {
