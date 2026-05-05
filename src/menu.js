@@ -66,7 +66,7 @@ function runMasterSearch() {
 
 function runNewLabsMasterSearch() {
   runMasterSearchCore_({
-    targetTabs: ["NEWLABS"],
+    targetTabs: ["NEWLABS",],
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
