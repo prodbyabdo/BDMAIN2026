@@ -165,28 +165,7 @@ function runMasterSearchCore_(options) {
       console.timeEnd("LoadDeactivated");
     }
 
-    // Load CLIA Database (Optimized: fetching only col 12 and 25)
-    const cliaNameSet = new Set();
-    const cliaPhoneSet = new Set();
-    const cliaSheet = ss.getSheetByName("CLIA");
-    if (cliaSheet && cliaSheet.getLastRow() >= 2) {
-      console.time("LoadCLIA");
-      const numRows = cliaSheet.getLastRow() - 1;
-      const lastCol = cliaSheet.getLastColumn();
-      if (lastCol >= 12) {
-        const cliaNames = cliaSheet.getRange(2, 12, numRows, 1).getValues();
-        const cliaPhones = lastCol >= 25 ? cliaSheet.getRange(2, 25, numRows, 1).getValues() : null;
-        for (let r = 0; r < numRows; r++) {
-          const name = clean(cliaNames[r][0]);
-          if (name) cliaNameSet.add(name);
-          if (cliaPhones) {
-            const phone = clean(cliaPhones[r][0]);
-            if (phone) cliaPhoneSet.add(phone);
-          }
-        }
-      }
-      console.timeEnd("LoadCLIA");
-    }
+
 
     // ---------------------------------------------------------------------------
     // 2. Determine Tabs to Scan
@@ -240,9 +219,7 @@ function runMasterSearchCore_(options) {
           const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
           const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
 
-          const isClia = (termH && cliaNameSet.has(termH)) ||
-            (termJ && cliaPhoneSet.has(termJ)) ||
-            (termL && cliaPhoneSet.has(termL));
+
 
           let colA = "";
           if (isDeac) {
@@ -251,9 +228,7 @@ function runMasterSearchCore_(options) {
             colA = flagMatch || "";
           }
 
-          if (isClia) {
-            colA = colA ? `${colA} | CLIA` : "CLIA";
-          }
+
 
           const rowResult = [colA, phone1Match, phone2Match];
 
