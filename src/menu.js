@@ -311,16 +311,12 @@ function _backupColumns(ss, sheet, tabName, numRows) {
   // Write tab name as header
   backup.getRange(1, 1).setValue(`Backup of ${tabName} @ ${new Date().toISOString()}`);
   
-  // Copy cols A-C in chunks to prevent timeout
-  const chunkSize = 5000;
-  for (let chunkStart = 0; chunkStart < numRows; chunkStart += chunkSize) {
-    const chunkRowCount = Math.min(chunkSize, numRows - chunkStart);
-    const startRow = chunkStart + 2;
-    const data = sheet.getRange(startRow, 1, chunkRowCount, 3).getValues();
-    if (data.length > 0) {
-      backup.getRange(startRow, 1, data.length, 3).setValues(data);
-      SpreadsheetApp.flush();
-    }
+  if (numRows > 0) {
+    // High-speed atomic copy instead of slow chunked getValues/setValues
+    const sourceRange = sheet.getRange(2, 1, numRows, 3);
+    const destRange = backup.getRange(2, 1);
+    sourceRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_VALUES, false);
+    SpreadsheetApp.flush();
   }
 }
 
