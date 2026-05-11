@@ -66,7 +66,7 @@ function runMasterSearch() {
 
 function runNewLabsMasterSearch() {
   runMasterSearchCore_({
-    targetTabs: ["NEWLABS", "NEWDME"],
+    targetTabs: [ "NEWDME", "JohnLeads"],
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
@@ -367,7 +367,7 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS"];
+  const targetTabs = ["MAIN", "LABS", "JohnLeads"];
   const columnIndices = [10, 12];
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
@@ -405,32 +405,57 @@ function clearCurrentTabFormatting() {
  */
 function normalizeActiveSheetTimestamps() {
   const sheet = SpreadsheetApp.getActiveSheet();
-  const range = sheet.getDataRange();
-  const values = range.getValues();
-  let changesMade = 0;
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < 2) return;
 
-  for (let r = 0; r < values.length; r++) {
-    for (let c = 0; c < values[r].length; c++) {
-      const cellValue = String(values[r][c]);
-      if (cellValue.includes('/') && (cellValue.includes(':') || cellValue.toLowerCase().includes('gmt'))) {
-        const normalized = smartNormalizer(cellValue);
-        if (normalized !== cellValue) {
-          values[r][c] = normalized;
-          changesMade++;
+  // OPTIMIZATION 1: Only check the columns that actually hold timestamps.
+  // Update this array with the column numbers where timestamps live.
+  // E.g., 6 is Col F, 17 is Col Q.
+  const targetColumns = [6, 17]; 
+  
+  let totalChanges = 0;
+
+  targetColumns.forEach(colIndex => {
+    // Check if the column actually exists in the sheet's current scope
+    if (colIndex > sheet.getLastColumn()) return; 
+
+    const range = sheet.getRange(2, colIndex, lastRow - 1, 1);
+    const values = range.getValues();
+    let colChangesMade = false;
+
+    for (let r = 0; r < values.length; r++) {
+      const cellValue = values[r][0];
+      
+      // OPTIMIZATION 2: Fast-fail on empty cells without casting to string
+      if (!cellValue) continue; 
+      
+      const strValue = String(cellValue);
+
+      // OPTIMIZATION 3: Refined check to avoid processing URLs or random text
+      if (strValue.includes('/') && (strValue.includes(':') || /gmt/i.test(strValue))) {
+        
+        const normalized = smartNormalizer(strValue);
+        
+        if (normalized !== strValue) {
+          values[r][0] = normalized;
+          colChangesMade = true;
+          totalChanges++;
         }
       }
     }
-  }
 
-  if (changesMade > 0) {
-    range.setValues(values);
+    // OPTIMIZATION 4: Only write back the specific column, and only if changes occurred
+    if (colChangesMade) {
+      range.setValues(values);
+    }
+  });
 
-    // Display a toast: .toast(message, title, timeoutSeconds)
-    SpreadsheetApp.getActiveSpreadsheet().toast(`${changesMade} cells normalized.`, 'Task Complete', 5);
-
+  const ui = SpreadsheetApp.getActiveSpreadsheet();
+  if (totalChanges > 0) {
+    ui.toast(`${totalChanges} cells normalized.`, 'Task Complete', 5);
   } else {
-    // If no changes, maybe a shorter toast or none at all
-    SpreadsheetApp.getActiveSpreadsheet().toast('No timestamps needed normalization.', 'Status', 3);
+    ui.toast('No timestamps needed normalization.', 'Status', 3);
   }
 }
 
