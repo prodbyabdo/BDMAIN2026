@@ -1,4 +1,6 @@
 /**
+ * 
+ *  
  * Custom Menu
  */
 function onOpen() {
@@ -15,6 +17,7 @@ function onOpen() {
     .addItem('Clear Formatting on Current Tab', 'clearCurrentTabFormatting')
     .addSeparator()
     .addItem('Create Filters', 'createLeadFilterViews')
+    .addItem('Row Height Ben ', 'setRowHeightForBen')
     .addToUi();
 }
 // =============================================================================
@@ -43,7 +46,8 @@ function runMasterSearch() {
           { name: "Selene", tab: "Selene Flags" },
           { name: "Jane", tab: "Jane Flags" },
           { name: "NI", tab: "NI / Not Eligible" },
-          { name: "Dis/Wn", tab: "Disconnected" }
+          { name: "Dis/Wn", tab: "Disconnected" },
+          { name: "AI", tab: "DMEDesk Booked" }
         ],
         toastSuffix: "MAIN & LABS"
       });
@@ -58,7 +62,8 @@ function runMasterSearch() {
       { name: "Selene", tab: "Selene Flags" },
       { name: "Jane", tab: "Jane Flags" },
       { name: "NI", tab: "NI / Not Eligible" },
-      { name: "Dis/Wn", tab: "Disconnected" }
+      { name: "Dis/Wn", tab: "Disconnected" },
+      { name: "AI", tab: "DMEDesk Booked" }
     ],
     toastSuffix: "MAIN & LABS"
   });
@@ -66,7 +71,7 @@ function runMasterSearch() {
 
 function runNewLabsMasterSearch() {
   runMasterSearchCore_({
-    targetTabs: [ "NEWDME", "JohnLeads"],
+    targetTabs: [ "NEWDME"],
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
@@ -565,4 +570,19 @@ function smartNormalizer(input) {
   }
 
   return input; // Return original if no date found
+}
+function setRowHeightForBen() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getActiveSheet();
+  const data = sheet.getDataRange().getValues();
+  const targetColumn = 3; // Column D is index 3 (0-indexed)
+  const targetValue = "Ben";
+
+  // Loop through the data (starting from row 2 to skip headers if necessary)
+  for (let i = 0; i < data.length; i++) {
+    if (data[i][targetColumn] === targetValue) {
+      // +1 because sheet rows are 1-indexed
+      sheet.autoResizeRow(i + 1); 
+    }
+  }
 }

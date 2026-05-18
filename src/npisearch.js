@@ -60,10 +60,12 @@ function bgetnpi(range, fields = "company") {
             basic.last_name || basic.authorized_official_last_name
           ].filter(Boolean).join(" ") || "N/A",
           position: basic.authorized_official_title_or_position || "N/A",
-          phone: addr.telephone_number || "N/A",
+          phone : basic.authorized_official_telephone_number || "N/A",
+          companyphone: addr.telephone_number || "N/A",
           state: addr.state || "N/A",
           lastupdate: basic.last_updated || "N/A",
-          taxonomies_group: taxonomies[0]?.desc || "N/A"
+          taxonomies_group: taxonomies[0]?.desc || "N/A",
+          enum: basic.enumeration_date || "N/A"
         };
 
         resultsMap[npi] = requestedFields.map(f => fieldValues[f] || "N/A");
