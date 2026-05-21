@@ -155,16 +155,17 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
       }
     }
 
-    // ── PART 1: TIMESTAMP IN COLUMN Q (write first — more critical) ─────
-    const formattedTS = Utilities.formatDate(now, Session.getScriptTimeZone(), "M/d/yyyy HH:mm:ss");
-    const newTS = existingTS ? formattedTS + "\n" + existingTS : formattedTS;
-    sheet.getRange(row, TIMESTAMP_COL).setValue(newTS);
-
-    // ── PART 2: AUTO-DATE IN COLUMN F ───────────────────────────────────
+    // ── PART 1: TIMESTAMP & AUTO-DATE IN COLUMN Q & F ───────────────────
     if (colDValue) {
-      const isDeletion = cellValue === "" || cellValue === "-";
+      const isCleared = cellValue === "";
 
-      if (!isDeletion) {
+      if (!isCleared) {
+        // Write timestamp to Col Q
+        const formattedTS = Utilities.formatDate(now, Session.getScriptTimeZone(), "M/d/yyyy HH:mm:ss");
+        const newTS = existingTS ? formattedTS + "\n" + existingTS : formattedTS;
+        sheet.getRange(row, TIMESTAMP_COL).setValue(newTS);
+
+        // Write date suffix to Col F
         const month = now.getMonth() + 1;
         const day = now.getDate();
         const dateSuffix = ` ${month}/${day}`;
@@ -180,8 +181,10 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
           sheet.getRange(row, COMMENT_COL).setValue(lines.join("\n"));
         }
       } else {
-        logAction("DATE_SKIP", sheetName, row, `Skipped date — deletion or dash (user: ${user})`, user);
+        logAction("SKIP_ALL", sheetName, row, `Skipped timestamp & date — cell cleared (user: ${user})`, user);
       }
+    } else {
+      logAction("SKIP_ALL", sheetName, row, `Skipped timestamp & date — no Owner value in Col D (user: ${user})`, user);
     }
 
     // ── SET COOLDOWN (after successful write) ───────────────────────────

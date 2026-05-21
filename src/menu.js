@@ -71,7 +71,7 @@ function runMasterSearch() {
 
 function runNewLabsMasterSearch() {
   runMasterSearchCore_({
-    targetTabs: [ "NEWDME"],
+    targetTabs: ["NEWDME"],
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
@@ -315,7 +315,7 @@ function _backupColumns(ss, sheet, tabName, numRows) {
   backup.clearContents();
   // Write tab name as header
   backup.getRange(1, 1).setValue(`Backup of ${tabName} @ ${new Date().toISOString()}`);
-  
+
   if (numRows > 0) {
     // High-speed atomic copy instead of slow chunked getValues/setValues
     const sourceRange = sheet.getRange(2, 1, numRows, 3);
@@ -372,7 +372,7 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["MAIN", "LABS", "JohnLeads"];
+  const targetTabs = ["MAIN", "LABS"];
   const columnIndices = [10, 12];
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
@@ -411,19 +411,19 @@ function clearCurrentTabFormatting() {
 function normalizeActiveSheetTimestamps() {
   const sheet = SpreadsheetApp.getActiveSheet();
   const lastRow = sheet.getLastRow();
-  
+
   if (lastRow < 2) return;
 
   // OPTIMIZATION 1: Only check the columns that actually hold timestamps.
   // Update this array with the column numbers where timestamps live.
   // E.g., 6 is Col F, 17 is Col Q.
-  const targetColumns = [6, 17]; 
-  
+  const targetColumns = [6, 17];
+
   let totalChanges = 0;
 
   targetColumns.forEach(colIndex => {
     // Check if the column actually exists in the sheet's current scope
-    if (colIndex > sheet.getLastColumn()) return; 
+    if (colIndex > sheet.getLastColumn()) return;
 
     const range = sheet.getRange(2, colIndex, lastRow - 1, 1);
     const values = range.getValues();
@@ -431,17 +431,17 @@ function normalizeActiveSheetTimestamps() {
 
     for (let r = 0; r < values.length; r++) {
       const cellValue = values[r][0];
-      
+
       // OPTIMIZATION 2: Fast-fail on empty cells without casting to string
-      if (!cellValue) continue; 
-      
+      if (!cellValue) continue;
+
       const strValue = String(cellValue);
 
       // OPTIMIZATION 3: Refined check to avoid processing URLs or random text
       if (strValue.includes('/') && (strValue.includes(':') || /gmt/i.test(strValue))) {
-        
+
         const normalized = smartNormalizer(strValue);
-        
+
         if (normalized !== strValue) {
           values[r][0] = normalized;
           colChangesMade = true;
@@ -582,7 +582,7 @@ function setRowHeightForBen() {
   for (let i = 0; i < data.length; i++) {
     if (data[i][targetColumn] === targetValue) {
       // +1 because sheet rows are 1-indexed
-      sheet.autoResizeRow(i + 1); 
+      sheet.autoResizeRow(i + 1);
     }
   }
 }

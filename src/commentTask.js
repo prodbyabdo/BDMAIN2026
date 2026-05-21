@@ -50,9 +50,9 @@ function processCommentTask(e) {
   try {
     if (!e || !e.range) return;
 
-    const sheet    = e.range.getSheet();
-    const col      = e.range.getColumn();
-    const row      = e.range.getRow();
+    const sheet = e.range.getSheet();
+    const col = e.range.getColumn();
+    const row = e.range.getRow();
     const sheetName = sheet.getName();
 
     // ── GUARD 1: Must be a data row (not header) ─────────────────────────────
@@ -72,8 +72,8 @@ function processCommentTask(e) {
     if (!cellText) return;
 
     // ── GUARD 4: Dedup — skip if a task was already created for this row recently
-    const cache      = CacheService.getScriptCache();
-    const cacheKey   = `task_${sheetName}_${row}_${commentsCol}`;
+    const cache = CacheService.getScriptCache();
+    const cacheKey = `task_${sheetName}_${row}_${commentsCol}`;
     if (cache.get(cacheKey)) {
       console.log(`[processCommentTask] Dedup skip — ${sheetName} R${row} (within ${TASK_COOLDOWN_SECONDS}s window)`);
       return;
@@ -81,7 +81,7 @@ function processCommentTask(e) {
 
     // ── BUILD TASK ─────────────────────────────────────────────────────────────
     const titleLine = cellText.split('\n')[0].trim(); // first line only for title
-    const dueDate   = _parseDueDate(cellText);
+    const dueDate = _parseDueDate(cellText);
 
     /** @type {GoogleAppsScript.Tasks.Schema.Task} */
     const task = {
@@ -138,10 +138,10 @@ function processCommentTask(e) {
  */
 function _getCommentsColumnIndex(sheet) {
   try {
-    const lastCol   = sheet.getLastColumn();
+    const lastCol = sheet.getLastColumn();
     if (lastCol < 1) return TASK_FALLBACK_COL;
 
-    const headers   = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     for (let i = 0; i < headers.length; i++) {
       if (String(headers[i]).trim().toLowerCase() === 'comments') {
         return i + 1; // convert to 1-based
@@ -179,9 +179,9 @@ function _parseDueDate(text) {
   // ── Priority 2: M/D or MM/DD (current year) ───────────────────────────────
   const slashMatch = text.match(/\b(\d{1,2})\/(\d{1,2})\b/);
   if (slashMatch) {
-    const year  = new Date().getFullYear();
+    const year = new Date().getFullYear();
     const month = parseInt(slashMatch[1], 10) - 1; // 0-indexed
-    const day   = parseInt(slashMatch[2], 10);
+    const day = parseInt(slashMatch[2], 10);
     const d = new Date(year, month, day);
     if (!isNaN(d.getTime()) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
       return d;
@@ -202,10 +202,10 @@ function _parseDueDate(text) {
  * Run via: Apps Script editor → select _testProcessCommentTask → Run
  */
 function _testProcessCommentTask() {
-  const SHEET_NAME   = 'MAIN';   // ← change if needed
+  const SHEET_NAME = 'MAIN';   // ← change if needed
   const CELL_ADDRESS = 'D2';     // ← change to a cell in your Comments column
 
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
 
   if (!sheet) {
@@ -214,8 +214,8 @@ function _testProcessCommentTask() {
   }
 
   const fakeEvent = {
-    range : sheet.getRange(CELL_ADDRESS),
-    value : 'Test task — follow up on billing 2026-05-15',
+    range: sheet.getRange(CELL_ADDRESS),
+    value: 'Test task — follow up on billing 2026-05-15',
     source: ss,
   };
 
