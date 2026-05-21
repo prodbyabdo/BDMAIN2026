@@ -61,11 +61,22 @@ function onEditInstallable(e) {
   if (!TARGET_TABS.includes(sheetName)) return;
   if (row <= 1) return;
 
-  // ── ACTIVATE TASKS INTEGRATION ────────────────────────────────────────────
-  processCommentTask(e);
+  // ── GUARD 3: Ignore programmatic write-back columns ───────────────────────
+  // _handleCommentEdit writes to TIMESTAMP_COL (17). Block it here.
+  if (col === TIMESTAMP_COL) return;
+
+  // ── GUARD 4: Skip if this edit was a programmatic self-write ─────────────
+  const selfWriteKey = `selfwrite_${sheetName}_${row}_${col}`;
+  const selfWriteCache = CacheService.getScriptCache();
+  if (selfWriteCache.get(selfWriteKey)) {
+    selfWriteCache.remove(selfWriteKey);
+    return;
+  }
 
   // ── ROUTE: Col F → Auto-date + Timestamp ─────────────────────────────────
   if (col === COMMENT_COL) {
+    // ── ACTIVATE TASKS INTEGRATION ────────────────────────────────────────────
+    processCommentTask(e);
     _handleCommentEdit(e, sheet, sheetName, col, row);
     return;
   }
@@ -179,6 +190,8 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
         const lastLineHasToday = todayRegex.test(lastLine);
 
         if (!lastLineHasToday) {
+          // Mark that WE are writing Col F — so the re-trigger can skip
+          cache.put(`selfwrite_${sheetName}_${row}_${COMMENT_COL}`, '1', 10);
           lines[lines.length - 1] = lines[lines.length - 1].trimEnd() + dateSuffix;
           sheet.getRange(row, COMMENT_COL).setValue(lines.join("\n"));
         }
@@ -304,6 +317,9 @@ function _appendRow(sheet, values) {
 /** Writes a log entry to the "LOGS" tab. */
 function logAction(status, sheetName, row, message, user) {
   try {
+    // Log to console (visible in Apps Script execution logs)
+    console.log(`[${status}] ${sheetName} R${row}: ${message} (${user})`);
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let logSheet = ss.getSheetByName("LOGS");
 
