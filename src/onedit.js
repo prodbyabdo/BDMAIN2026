@@ -53,6 +53,8 @@ function onEditInstallable(e) {
   if (e.range.getWidth() > 1 || e.range.getHeight() > 1) return;
 
   const col = e.range.getColumn();
+  if (col !== 6 && col !== 16 && col !== 17) return;
+
   const row = e.range.getRow();
   const sheet = e.range.getSheet();
   const sheetName = sheet.getName();
