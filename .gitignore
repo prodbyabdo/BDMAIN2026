@@ -46,9 +46,9 @@ implementation_plan 15 4 26.md
 *.tsbuildinfo
 next-env.d.ts
 
-
 # agentic
-/.agents
+/.agents/skills
+
 
 # clasp
 /.claspignore
