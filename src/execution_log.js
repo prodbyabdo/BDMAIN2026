@@ -87,7 +87,7 @@ function ensureExecutionLogSheet_() {
     sheet = ss.insertSheet(EXECUTION_LOG_SHEET_NAME);
     sheet.getRange(1, 1, 1, EXECUTION_LOG_HEADERS.length).setValues([EXECUTION_LOG_HEADERS]);
     sheet.getRange(1, 1, 1, EXECUTION_LOG_HEADERS.length).setFontWeight('bold');
-
+    
     const protection = sheet.protect().setDescription('Only owner can edit EXEC_LOG');
     protection.removeEditors(protection.getEditors());
     if (protection.canDomainEdit()) protection.setDomainEdit(false);

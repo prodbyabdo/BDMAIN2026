@@ -9,12 +9,12 @@ function bgetnpi(range, fields = "company") {
   if (!range) return [["No Input"]];
 
   // Normalize input: handles single cells, 1D arrays, and 2D arrays
-  const grid = Array.isArray(range)
-    ? (Array.isArray(range[0]) ? range : [range])
+  const grid = Array.isArray(range) 
+    ? (Array.isArray(range[0]) ? range : [range]) 
     : [[range]];
 
   const requestedFields = fields.toLowerCase().split(",").map(f => f.trim());
-
+  
   // Extract unique NPIs
   const npiToFetch = [...new Set(grid.flat().map(cell => {
     if (!cell) return null;
@@ -33,10 +33,10 @@ function bgetnpi(range, fields = "company") {
 
     try {
       const responses = UrlFetchApp.fetchAll(requests);
-
+      
       responses.forEach((res, i) => {
         const npi = npiToFetch[i];
-
+        
         if (res.getResponseCode() !== 200) {
           resultsMap[npi] = requestedFields.map(() => "Error");
           return;
@@ -60,7 +60,7 @@ function bgetnpi(range, fields = "company") {
             basic.last_name || basic.authorized_official_last_name
           ].filter(Boolean).join(" ") || "N/A",
           position: basic.authorized_official_title_or_position || "N/A",
-          phone: basic.authorized_official_telephone_number || "N/A",
+          phone : basic.authorized_official_telephone_number || "N/A",
           companyphone: addr.telephone_number || "N/A",
           state: addr.state || "N/A",
           lastupdate: basic.last_updated || "N/A",

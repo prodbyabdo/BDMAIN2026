@@ -61,6 +61,9 @@ function onEditInstallable(e) {
   if (!TARGET_TABS.includes(sheetName)) return;
   if (row <= 1) return;
 
+  // ── ACTIVATE TASKS INTEGRATION ────────────────────────────────────────────
+  processCommentTask(e);
+
   // ── ROUTE: Col F → Auto-date + Timestamp ─────────────────────────────────
   if (col === COMMENT_COL) {
     _handleCommentEdit(e, sheet, sheetName, col, row);

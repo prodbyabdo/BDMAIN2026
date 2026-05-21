@@ -38,8 +38,8 @@ const TASK_LIST_ID = '@default';
 // =============================================================================
 
 /**
- * Creates a Google Task when the edited cell is in the "Comments" column
- * and contains a non-empty value.
+ * Creates a Google Task when the edited cell is in the "Comments" column,
+ * contains a non-empty value, and includes the `@task(...)` annotation.
  *
  * Self-guarded: performs its own column check and dedup, so it is safe to
  * call unconditionally at the top of onEditInstallable before any routing.
@@ -50,13 +50,18 @@ function processCommentTask(e) {
   try {
     if (!e || !e.range) return;
 
-    const sheet = e.range.getSheet();
-    const col = e.range.getColumn();
-    const row = e.range.getRow();
+    const sheet    = e.range.getSheet();
+    const col      = e.range.getColumn();
+    const row      = e.range.getRow();
     const sheetName = sheet.getName();
 
     // ── GUARD 1: Must be a data row (not header) ─────────────────────────────
     if (row <= 1) return;
+
+    // ── GUARD 1.5: Must be Ben's lead (Column 4 / D contains "Ben") ──────────
+    const leadOwnerRaw = sheet.getRange(row, 4).getValue();
+    const leadOwner = String(leadOwnerRaw ?? '').trim().toLowerCase();
+    if (!leadOwner.includes('ben')) return;
 
     // ── GUARD 2: Must be the "Comments" column ────────────────────────────────
     const commentsCol = _getCommentsColumnIndex(sheet);
@@ -71,26 +76,46 @@ function processCommentTask(e) {
     }
     if (!cellText) return;
 
-    // ── GUARD 4: Dedup — skip if a task was already created for this row recently
-    const cache = CacheService.getScriptCache();
-    const cacheKey = `task_${sheetName}_${row}_${commentsCol}`;
+    // ── GUARD 4: Must contain the @task(...) annotation ──────────────────────
+    const taskRegex = /@task\(([^)]+)\)/i;
+    const match = cellText.match(taskRegex);
+    if (!match) return; // Exit silently if no @task(...) tag found
+
+    const taskContent = match[1].trim();
+
+    // ── GUARD 5: Dedup — skip if a task was already created for this row recently
+    const cache      = CacheService.getScriptCache();
+    const cacheKey   = `task_${sheetName}_${row}_${commentsCol}`;
     if (cache.get(cacheKey)) {
       console.log(`[processCommentTask] Dedup skip — ${sheetName} R${row} (within ${TASK_COOLDOWN_SECONDS}s window)`);
       return;
     }
 
     // ── BUILD TASK ─────────────────────────────────────────────────────────────
-    const titleLine = cellText.split('\n')[0].trim(); // first line only for title
-    const dueDate = _parseDueDate(cellText);
+    const dueDate   = _parseDueDate(taskContent);
+
+    // Clean up task title by stripping out any matched date string to keep it neat
+    let title = taskContent;
+    if (dueDate) {
+      title = taskContent
+        .replace(/\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    if (!title) {
+      title = 'Follow Up';
+    }
 
     /** @type {GoogleAppsScript.Tasks.Schema.Task} */
     const task = {
-      title: titleLine || '(no title)',
+      title: title,
       notes: cellText,
     };
 
     // Due date must be an RFC 3339 timestamp (time portion is ignored by Tasks)
     if (dueDate) {
+      // Set to noon to act as timezone buffer
+      dueDate.setHours(12, 0, 0, 0);
       task.due = dueDate.toISOString();
     }
 
@@ -138,10 +163,10 @@ function processCommentTask(e) {
  */
 function _getCommentsColumnIndex(sheet) {
   try {
-    const lastCol = sheet.getLastColumn();
+    const lastCol   = sheet.getLastColumn();
     if (lastCol < 1) return TASK_FALLBACK_COL;
 
-    const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headers   = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     for (let i = 0; i < headers.length; i++) {
       if (String(headers[i]).trim().toLowerCase() === 'comments') {
         return i + 1; // convert to 1-based
@@ -179,9 +204,9 @@ function _parseDueDate(text) {
   // ── Priority 2: M/D or MM/DD (current year) ───────────────────────────────
   const slashMatch = text.match(/\b(\d{1,2})\/(\d{1,2})\b/);
   if (slashMatch) {
-    const year = new Date().getFullYear();
+    const year  = new Date().getFullYear();
     const month = parseInt(slashMatch[1], 10) - 1; // 0-indexed
-    const day = parseInt(slashMatch[2], 10);
+    const day   = parseInt(slashMatch[2], 10);
     const d = new Date(year, month, day);
     if (!isNaN(d.getTime()) && month >= 0 && month <= 11 && day >= 1 && day <= 31) {
       return d;
@@ -202,10 +227,10 @@ function _parseDueDate(text) {
  * Run via: Apps Script editor → select _testProcessCommentTask → Run
  */
 function _testProcessCommentTask() {
-  const SHEET_NAME = 'MAIN';   // ← change if needed
+  const SHEET_NAME   = 'MAIN';   // ← change if needed
   const CELL_ADDRESS = 'D2';     // ← change to a cell in your Comments column
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAME);
 
   if (!sheet) {
@@ -214,8 +239,8 @@ function _testProcessCommentTask() {
   }
 
   const fakeEvent = {
-    range: sheet.getRange(CELL_ADDRESS),
-    value: 'Test task — follow up on billing 2026-05-15',
+    range : sheet.getRange(CELL_ADDRESS),
+    value : 'Test task — follow up on billing 2026-05-15',
     source: ss,
   };
 
