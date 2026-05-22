@@ -77,8 +77,8 @@ function onEditInstallable(e) {
 
   // ── ROUTE: Col F → Auto-date + Timestamp ─────────────────────────────────
   if (col === COMMENT_COL) {
-    // ── ACTIVATE TASKS INTEGRATION ────────────────────────────────────────────
-    processCommentTask(e);
+    // ── ACTIVATE TASKS INTEGRATION (PAUSED) ───────────────────────────────────
+    // // processCommentTask(e); // Paused to prevent lock contention / API overhead
     _handleCommentEdit(e, sheet, sheetName, col, row);
     return;
   }
@@ -115,68 +115,73 @@ function onEditInstallable(e) {
  */
 function _handleCommentEdit(e, sheet, sheetName, col, row) {
   const user = Session.getActiveUser().getEmail() || "Unknown User";
+  const now = new Date();
 
-  // ── SCRIPT-LEVEL LOCK (blocks ALL users, not just current) ────────────
+  // ── 1. COOLDOWN CHECK BEFORE LOCK (fail fast without blocking) ──────────
+  const cache = CacheService.getScriptCache();
+  const cooldownKey = `edit_${sheetName}_${row}_${col}`;
+  const lastRunISO = cache.get(cooldownKey);
+
+  if (lastRunISO) {
+    const lastRun = new Date(lastRunISO);
+    if (!isNaN(lastRun.getTime())) {
+      const secDiff = (now.getTime() - lastRun.getTime()) / 1000;
+      if (secDiff < COOLDOWN_SECONDS) {
+        logAction("COOLDOWN_SKIP", sheetName, row, `Skipped (diff: ${Math.round(secDiff)}s, by: ${user})`, user);
+        return;
+      }
+    }
+  }
+
+  // ── 2. SINGLE BATCH READ: Grab Col D and Col Q in one API roundtrip ───────
+  const rowVals = sheet.getRange(row, 1, 1, TIMESTAMP_COL).getValues()[0];
+  const colDRaw = rowVals[NAME_COL - 1]; // Column D (index 3)
+  const colDValue = String(colDRaw ?? "").trim().toLowerCase();
+  const existingTSRaw = rowVals[TIMESTAMP_COL - 1]; // Column Q (index 16)
+  const existingTS = String(existingTSRaw ?? "").trim();
+
+  // ── 3. GET CELL VALUE FROM EVENT (immutable, not re-read) ──────────────
+  let cellValue = "";
+  if (e.value !== undefined && e.value !== null) {
+    cellValue = String(e.value).trim();
+  } else {
+    // Fallback: read from range (less safe but covers edge cases like paste/formulas)
+    const rawValue = e.range.getValue();
+    if (rawValue instanceof Date) {
+      const m = rawValue.getMonth() + 1;
+      const d = rawValue.getDate();
+      const y = rawValue.getFullYear();
+      cellValue = `${m}/${d}/${y}`;
+    } else {
+      cellValue = String(rawValue ?? "").trim();
+    }
+  }
+
+  // ── 4. SCRIPT-LEVEL LOCK (scope minimized to actual write operations) ────
   const lock = LockService.getScriptLock();
+  let lockAcquired = false;
+  let isDateWritten = false;
+  let logMessage = "";
+  let logStatus = "SUCCESS";
 
   try {
-    if (!lock.tryLock(15000)) {
-      logAction("LOCK_TIMEOUT", sheetName, row, "Could not acquire script lock in 15s", user);
+    // Increased timeout to 30s to be safe under load, but holding it for much less time
+    if (!lock.tryLock(30000)) {
+      logAction("LOCK_TIMEOUT", sheetName, row, "Could not acquire script lock in 30s", user);
       return;
     }
+    lockAcquired = true;
 
-    const now = new Date();
+    // Fetch existing Q again under the lock to prevent overwriting if someone edited Q in parallel
+    const currentTSRaw = sheet.getRange(row, TIMESTAMP_COL).getValue();
+    const currentTS = String(currentTSRaw ?? "").trim();
 
-    // ── COOLDOWN CHECK (script-wide, not per-user) ────────────────────────
-    const cache = CacheService.getScriptCache();
-    const cooldownKey = `edit_${sheetName}_${row}_${col}`;
-    const lastRunISO = cache.get(cooldownKey);
-
-    if (lastRunISO) {
-      const lastRun = new Date(lastRunISO);
-      if (!isNaN(lastRun.getTime())) {
-        const secDiff = (now.getTime() - lastRun.getTime()) / 1000;
-        if (secDiff < COOLDOWN_SECONDS) {
-          logAction("COOLDOWN_SKIP", sheetName, row, `Skipped (diff: ${Math.round(secDiff)}s, by: ${user})`, user);
-          return;
-        }
-      }
-    }
-
-    // ── READ: Grab Col D and Col Q ──────────────────────────────────────
-    // Only read what we need — Col D (owner) and Col Q (timestamp)
-    const colDRaw = sheet.getRange(row, NAME_COL).getValue();
-    const colDValue = String(colDRaw ?? "").trim().toLowerCase();
-
-    const existingTSRaw = sheet.getRange(row, TIMESTAMP_COL).getValue();
-    const existingTS = String(existingTSRaw ?? "").trim();
-
-    // ── GET CELL VALUE FROM EVENT (immutable, not re-read) ──────────────
-    // e.value is captured at trigger creation time — safe from concurrent edits
-    let cellValue = "";
-    if (e.value !== undefined && e.value !== null) {
-      // e.value is always a string in installable triggers
-      cellValue = String(e.value).trim();
-    } else {
-      // Fallback: read from range (less safe but covers edge cases like paste)
-      const rawValue = e.range.getValue();
-      if (rawValue instanceof Date) {
-        // Format the date directly — do NOT re-read from sheet
-        const m = rawValue.getMonth() + 1;
-        const d = rawValue.getDate();
-        const y = rawValue.getFullYear();
-        cellValue = `${m}/${d}/${y}`;
-      } else {
-        cellValue = String(rawValue ?? "").trim();
-      }
-    }
-
-    // ── PART 1: TIMESTAMP IN COLUMN Q (write first — more critical) ─────
+    // Write Timestamp
     const formattedTS = Utilities.formatDate(now, Session.getScriptTimeZone(), "M/d/yyyy HH:mm:ss");
-    const newTS = existingTS ? formattedTS + "\n" + existingTS : formattedTS;
+    const newTS = currentTS ? formattedTS + "\n" + currentTS : formattedTS;
     sheet.getRange(row, TIMESTAMP_COL).setValue(newTS);
 
-    // ── PART 2: AUTO-DATE IN COLUMN F ───────────────────────────────────
+    // Auto-date in Column F
     if (colDValue) {
       const isDeletion = cellValue === "" || cellValue === "-";
 
@@ -196,21 +201,34 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
           cache.put(`selfwrite_${sheetName}_${row}_${COMMENT_COL}`, '1', 10);
           lines[lines.length - 1] = lines[lines.length - 1].trimEnd() + dateSuffix;
           sheet.getRange(row, COMMENT_COL).setValue(lines.join("\n"));
+          isDateWritten = true;
         }
-      } else {
-        logAction("DATE_SKIP", sheetName, row, `Skipped date — deletion or dash (user: ${user})`, user);
       }
     }
 
-    // ── SET COOLDOWN (after successful write) ───────────────────────────
+    // Set cooldown cache
     cache.put(cooldownKey, now.toISOString(), COOLDOWN_SECONDS + 10);
 
-    logAction("SUCCESS", sheetName, row, `Edit processed in Col F (user: ${user})`, user);
+    if (isDateWritten) {
+      logMessage = `Edit processed in Col F (user: ${user})`;
+      logStatus = "SUCCESS";
+    } else {
+      logMessage = `Skipped date formatting — deletion, dash, or today already appended (user: ${user})`;
+      logStatus = "DATE_SKIP";
+    }
 
   } catch (err) {
-    logAction("ERROR", sheetName, row, err.toString(), user);
+    logStatus = "ERROR";
+    logMessage = err.toString();
   } finally {
-    lock.releaseLock();
+    if (lockAcquired) {
+      lock.releaseLock();
+    }
+  }
+
+  // ── 5. LOG WRITE DEFERRED OUTSIDE THE LOCK (prevents lock starvation) ───
+  if (lockAcquired) {
+    logAction(logStatus, sheetName, row, logMessage, user);
   }
 }
 
