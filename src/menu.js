@@ -108,16 +108,14 @@ function runMasterSearchCore_(options) {
     // ---------------------------------------------------------------------------
     ss.toast("Loading lookup data...", "Search", 2);
 
-    // Load raw data for lookup tabs (Optimized: fetching only cols H to L, which is 8 to 12)
     const lookupData = {};
     lookupTabs.forEach(config => {
       const sheet = ss.getSheetByName(config.tab);
-      if (sheet && sheet.getLastRow() >= 2) {
-        const lastCol = sheet.getLastColumn();
-        if (lastCol >= 12) {
-          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, 5).getValues();
-        } else if (lastCol >= 8) {
-          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, lastCol - 7).getValues();
+      if (sheet) {
+        const lastRow = sheet.getLastRow();
+        if (lastRow >= 2) {
+          // Fetch only cols H to L (max width needed) using config constant
+          lookupData[config.name] = sheet.getRange(2, COL_SEARCH_START, lastRow - 1, COL_LOOKUP_WIDTH_MAX).getValues();
         } else {
           lookupData[config.name] = [];
         }
@@ -135,9 +133,15 @@ function runMasterSearchCore_(options) {
       const phone2Set = new Set();
       for (let r = 0; r < data.length; r++) {
         const row = data[r];
-        if (row[0]) nameSet.add(String(row[0]).toLowerCase().trim());
-        if (row.length > 2 && row[2]) phone1Set.add(String(row[2]).toLowerCase().trim());
-        if (row.length > 4 && row[4]) phone2Set.add(String(row[4]).toLowerCase().trim());
+        if (row[COL_LOOKUP_NAME_OFFSET]) {
+          nameSet.add(String(row[COL_LOOKUP_NAME_OFFSET]).toLowerCase().trim());
+        }
+        if (row.length > COL_LOOKUP_PH1_OFFSET && row[COL_LOOKUP_PH1_OFFSET]) {
+          phone1Set.add(String(row[COL_LOOKUP_PH1_OFFSET]).toLowerCase().trim());
+        }
+        if (row.length > COL_LOOKUP_PH2_OFFSET && row[COL_LOOKUP_PH2_OFFSET]) {
+          phone2Set.add(String(row[COL_LOOKUP_PH2_OFFSET]).toLowerCase().trim());
+        }
       }
       lookupSets[config.name] = { name: nameSet, phone1: phone1Set, phone2: phone2Set };
     });
@@ -146,10 +150,10 @@ function runMasterSearchCore_(options) {
     let meetingNameSet = new Set();
     let meetingPhoneSet = new Set();
     const importSheet = ss.getSheetByName("IMPORT_DATA");
-    if (importSheet && importSheet.getLastRow() >= 2) {
-      const lastCol = importSheet.getLastColumn();
-      if (lastCol >= 16) {
-        const meetingData = importSheet.getRange(2, 15, importSheet.getLastRow() - 1, 2).getValues();
+    if (importSheet) {
+      const lastRow = importSheet.getLastRow();
+      if (lastRow >= 2) {
+        const meetingData = importSheet.getRange(2, COL_IMPORT_NAME, lastRow - 1, COL_IMPORT_WIDTH).getValues();
         for (let r = 0; r < meetingData.length; r++) {
           if (meetingData[r][0]) meetingNameSet.add(String(meetingData[r][0]).toLowerCase().trim());
           if (meetingData[r][1]) meetingPhoneSet.add(String(meetingData[r][1]).toLowerCase().trim());
@@ -157,20 +161,57 @@ function runMasterSearchCore_(options) {
       }
     }
 
-    // Load Deactivated NPIs (potentially huge)
+    // Load Deactivated NPIs
     const deactivatedNPIs = new Set();
     const deacSheet = ss.getSheetByName("Deactivated");
-    if (deacSheet && deacSheet.getLastRow() >= 2) {
-      console.time("LoadDeactivated");
-      const deacValues = deacSheet.getRange(2, 15, deacSheet.getLastRow() - 1, 1).getValues();
-      for (let r = 0; r < deacValues.length; r++) {
-        const sNpi = String(deacValues[r][0] || "").trim();
-        if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
+    if (deacSheet) {
+      const lastRow = deacSheet.getLastRow();
+      if (lastRow >= 2) {
+        console.time("LoadDeactivated");
+        const deacValues = deacSheet.getRange(2, COL_DEAC_NPI, lastRow - 1, 1).getValues();
+        for (let r = 0; r < deacValues.length; r++) {
+          const sNpi = String(deacValues[r][0] || "").trim();
+          if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
+        }
+        console.timeEnd("LoadDeactivated");
       }
-      console.timeEnd("LoadDeactivated");
     }
 
+    // Initialize caching maps to avoid duplicate loops for the same names/phones
+    const nameLookupCache = new Map();
+    const phoneLookupCache = new Map();
 
+    function searchNameFast_(term) {
+      if (term === "") return "";
+      const cached = nameLookupCache.get(term);
+      if (cached !== undefined) return cached;
+
+      const matches = [];
+      lookupTabs.forEach(config => {
+        const sets = lookupSets[config.name];
+        if (sets && sets.name.has(term)) matches.push(config.name);
+      });
+      if (meetingNameSet.has(term)) matches.push("Meeting");
+      const result = matches.join(", ");
+      nameLookupCache.set(term, result);
+      return result;
+    }
+
+    function searchPhoneFast_(term) {
+      if (term === "") return "";
+      const cached = phoneLookupCache.get(term);
+      if (cached !== undefined) return cached;
+
+      const matches = [];
+      lookupTabs.forEach(config => {
+        const sets = lookupSets[config.name];
+        if (sets && (sets.phone1.has(term) || sets.phone2.has(term))) matches.push(config.name);
+      });
+      if (meetingPhoneSet.has(term)) matches.push("Meeting");
+      const result = matches.join(", ");
+      phoneLookupCache.set(term, result);
+      return result;
+    }
 
     // ---------------------------------------------------------------------------
     // 2. Determine Tabs to Scan
@@ -184,80 +225,75 @@ function runMasterSearchCore_(options) {
 
     targetTabs.forEach(tabName => {
       const sheet = ss.getSheetByName(tabName);
-      if (!sheet || sheet.getLastRow() < 2) return;
+      if (!sheet) return;
+      const lastRow = sheet.getLastRow();
+      if (lastRow < 2) return;
 
-      const numRows = sheet.getLastRow() - 1;
+      const numRows = lastRow - 1;
       console.time(`Process_${tabName}`);
 
       _backupColumns(ss, sheet, tabName, numRows);
 
-      const chunkSize = 5000;
-      for (let chunkStart = 0; chunkStart < numRows; chunkStart += chunkSize) {
-        const chunkRowCount = Math.min(chunkSize, numRows - chunkStart);
-        const startRow = chunkStart + 2;
+      // PERFORM A SINGLE BULK READ for columns H to O (8 columns starting from H)
+      const searchValues = sheet.getRange(2, COL_SEARCH_START, numRows, COL_SEARCH_WIDTH).getValues();
+      const outputRows = [];
 
-        // Batch fetch primary data in chunks to prevent timeout
-        const searchValues = sheet.getRange(startRow, 8, chunkRowCount, 8).getValues(); // H to O
-        const colDValues = sheet.getRange(startRow, 4, chunkRowCount, 1).getValues();   // D (Owner)
+      const offsetNpi = COL_NPI - COL_SEARCH_START;         // 15 - 8 = 7
+      const offsetName = COL_LOOKUP_NAME_OFFSET;           // 0
+      const offsetPhone1 = COL_PHONE1 - COL_SEARCH_START;   // 10 - 8 = 2
+      const offsetPhone2 = COL_PHONE2 - COL_SEARCH_START;   // 12 - 8 = 4
 
-        const outputRows = [];
+      for (let i = 0; i < numRows; i++) {
+        const npi = String(searchValues[i][offsetNpi] || "").trim();
+        const hasNpi = npi && npi !== "0";
 
-        for (let i = 0; i < chunkRowCount; i++) {
-          const npi = String(searchValues[i][7] || "").trim();
-          const colD = String(colDValues[i][0] || "").trim();
-          const hasNpi = npi && npi !== "0";
+        const termH = clean(searchValues[i][offsetName]);
+        const termJ = clean(searchValues[i][offsetPhone1]);
+        const termL = clean(searchValues[i][offsetPhone2]);
 
-          const termH = clean(searchValues[i][0]);
-          const termJ = clean(searchValues[i][2]);
-          const termL = clean(searchValues[i][4]);
-
-          // Cache Check: If already processed this exact lead, skip to save CPU
-          const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
-          if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
-            outputRows.push(processedCache.get(cacheKey));
-            continue;
-          }
-
-          const isDeac = hasNpi && deactivatedNPIs.has(npi);
-
-          const flagMatch = searchNameFast(termH, lookupTabs, lookupSets, meetingNameSet);
-          const phone1Match = searchPhoneFast(termJ, lookupTabs, lookupSets, meetingPhoneSet);
-          const phone2Match = searchPhoneFast(termL, lookupTabs, lookupSets, meetingPhoneSet);
-
-
-
-          let colA = "";
-          if (isDeac) {
-            colA = "DEAC";
-          } else {
-            colA = flagMatch || "";
-          }
-
-
-
-          const rowResult = [colA, phone1Match, phone2Match];
-
-          // Save to cache
-          if (npi || termH || termJ || termL) {
-            processedCache.set(cacheKey, rowResult);
-          }
-
-          outputRows.push(rowResult);
+        // Cache Check: If already processed this exact lead, skip to save CPU
+        const cacheKey = (npi || "no_npi") + "|" + termH + "|" + termJ + "|" + termL;
+        if ((npi || termH || termJ || termL) && processedCache.has(cacheKey)) {
+          outputRows.push(processedCache.get(cacheKey));
+          continue;
         }
 
-        const currentLastRow = sheet.getLastRow();
-        if (currentLastRow - 1 !== numRows) {
-          ss.toast(
-            `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
-            '⚠️ Aborted', 10
-          );
-          return; // skip this tab, don't write
+        const isDeac = hasNpi && deactivatedNPIs.has(npi);
+
+        const flagMatch = searchNameFast_(termH);
+        const phone1Match = searchPhoneFast_(termJ);
+        const phone2Match = searchPhoneFast_(termL);
+
+        let colA = "";
+        if (isDeac) {
+          colA = "DEAC";
+        } else {
+          colA = flagMatch || "";
         }
 
-        // High-Speed Bulk Write in chunks
-        sheet.getRange(startRow, 1, chunkRowCount, 3).setValues(outputRows);
-        SpreadsheetApp.flush();
+        const rowResult = [colA, phone1Match, phone2Match];
+
+        // Save to cache
+        if (npi || termH || termJ || termL) {
+          processedCache.set(cacheKey, rowResult);
+        }
+
+        outputRows.push(rowResult);
       }
+
+      // Verify that the row count has not changed since the start of execution
+      const currentLastRow = sheet.getLastRow();
+      if (currentLastRow - 1 !== numRows) {
+        ss.toast(
+          `Row count changed (expected ${numRows}, got ${currentLastRow - 1}). Aborting write on ${tabName}.`,
+          '⚠️ Aborted', 10
+        );
+        return; // skip write
+      }
+
+      // HIGH-SPEED BULK WRITE: Write all rows in a single API call for maximum performance!
+      sheet.getRange(2, COL_OUTPUT_START, numRows, COL_OUTPUT_WIDTH).setValues(outputRows);
+      SpreadsheetApp.flush();
 
       console.timeEnd(`Process_${tabName}`);
     });
@@ -267,38 +303,6 @@ function runMasterSearchCore_(options) {
   } finally {
     lock.releaseLock();
   }
-}
-
-// =============================================================================
-// FAST SEARCH HELPERS (Set-based - O(1) per lookup)
-// =============================================================================
-
-/**
- * Searches lookup Sets for a match. O(1) per source instead of O(n).
- */
-function searchNameFast(term, lookupTabs, lookupSets, meetingNameSet) {
-  if (term === "") return "";
-  const matches = [];
-  lookupTabs.forEach(config => {
-    const sets = lookupSets[config.name];
-    if (sets && sets.name.has(term)) matches.push(config.name);
-  });
-  if (meetingNameSet.has(term)) matches.push("Meeting");
-  return matches.join(", ");
-}
-
-/**
- * Searches lookup phone Sets for a match. O(1) per source instead of O(n).
- */
-function searchPhoneFast(term, lookupTabs, lookupSets, meetingPhoneSet) {
-  if (term === "") return "";
-  const matches = [];
-  lookupTabs.forEach(config => {
-    const sets = lookupSets[config.name];
-    if (sets && (sets.phone1.has(term) || sets.phone2.has(term))) matches.push(config.name);
-  });
-  if (meetingPhoneSet.has(term)) matches.push("Meeting");
-  return matches.join(", ");
 }
 
 // =============================================================================
@@ -317,9 +321,9 @@ function _backupColumns(ss, sheet, tabName, numRows) {
   backup.getRange(1, 1).setValue(`Backup of ${tabName} @ ${new Date().toISOString()}`);
 
   if (numRows > 0) {
-    // High-speed atomic copy instead of slow chunked getValues/setValues
-    const sourceRange = sheet.getRange(2, 1, numRows, 3);
-    const destRange = backup.getRange(2, 1);
+    // High-speed atomic copy using config.js constants
+    const sourceRange = sheet.getRange(2, COL_BACKUP_START, numRows, COL_BACKUP_WIDTH);
+    const destRange = backup.getRange(2, COL_BACKUP_START);
     sourceRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_VALUES, false);
     SpreadsheetApp.flush();
   }
