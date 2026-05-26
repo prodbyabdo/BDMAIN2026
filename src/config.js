@@ -26,6 +26,7 @@ const COL_SEARCH_WIDTH = 8;   // H–O — Number of columns in the search block
 const COL_NPI = 15;  // O — NPI number
 const COL_SEND_LEAD = 16;  // P — "Send Lead to" routing dropdown
 const COL_TIMESTAMP = 17;  // Q — Timestamp history (written by _handleCommentEdit)
+const COL_VERIFY_CHECKBOX = 19; // S — Checkbox to trigger phone verification on-demand
 
 // ── Phone columns ─────────────────────────────────────────────────────────────
 const COL_PHONE1 = 10;  // J — Office / primary phone

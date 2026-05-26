@@ -8,6 +8,7 @@ function onOpen() {
   ui.createMenu('Custom Tools')
     .addItem('Run Master Search', 'runMasterSearch')
     .addItem('Run NEWLABS Master Search', 'runNewLabsMasterSearch')
+    .addItem('Verify Selected Phones', 'verifySelectedPhones')
     .addSeparator()
     .addItem('Capitalize Business & Names', 'capitalizeHeadersBatch')
     .addItem('Clean & Format Phone Numbers', 'reformatPhoneNumbers')
