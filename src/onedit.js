@@ -34,7 +34,6 @@ const FLAG_TAB_MAP = {
 };
 
 // ── Header names (must match Row 1 exactly) ───────────────────────────────────
-const HEADER_TRIGGER = 'Send Lead to';
 const HEADER_FIRST_DATA = 'NAME';
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -53,7 +52,7 @@ function onEditInstallable(e) {
   if (e.range.getWidth() > 1 || e.range.getHeight() > 1) return;
 
   const col = e.range.getColumn();
-  if (col !== 6 && col !== 16 && col !== 17) return;
+  if (!ONEDIT_TRIGGER_COLS.includes(col)) return;
 
   const row = e.range.getRow();
   const sheet = e.range.getSheet();
@@ -84,15 +83,8 @@ function onEditInstallable(e) {
   }
 
   // ── ROUTE: "Send Lead to" column → Lead routing ──────────────────────────
-  // Resolve the column dynamically from headers (it may shift)
-  const lastCol = sheet.getLastColumn();
-  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const headerMap = {};
-  headerRow.forEach((h, i) => { if (h) headerMap[String(h).trim()] = i + 1; });
-
-  const leadCol = headerMap[HEADER_TRIGGER];
-  if (leadCol && col === leadCol) {
-    _handleLeadRouting(e, sheet, sheetName, row, headerMap, leadCol);
+  if (col === COL_SEND_LEAD) {
+    _handleLeadRouting(e, sheet, sheetName, row);
     return;
   }
 
@@ -127,7 +119,7 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
     if (!isNaN(lastRun.getTime())) {
       const secDiff = (now.getTime() - lastRun.getTime()) / 1000;
       if (secDiff < COOLDOWN_SECONDS) {
-        logAction("COOLDOWN_SKIP", sheetName, row, `Skipped (diff: ${Math.round(secDiff)}s, by: ${user})`, user);
+        console.log(`[COOLDOWN_SKIP] ${sheetName} R${row}: Skipped (diff: ${Math.round(secDiff)}s, by: ${user})`);
         return;
       }
     }
@@ -167,7 +159,7 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
   try {
     // Increased timeout to 30s to be safe under load, but holding it for much less time
     if (!lock.tryLock(30000)) {
-      logAction("LOCK_TIMEOUT", sheetName, row, "Could not acquire script lock in 30s", user);
+      console.log(`[LOCK_TIMEOUT] ${sheetName} R${row}: Could not acquire script lock in 30s (${user})`);
       return;
     }
     lockAcquired = true;
@@ -235,93 +227,108 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
 // =============================================================================
 // HANDLER B — "Send Lead to": Lead Routing
 // =============================================================================
-function _handleLeadRouting(e, sheet, sheetName, row, headerMap, leadCol) {
-  // Batch read everything from Col 1 to leadCol in one single hit
-  const fullRowData = sheet.getRange(row, 1, 1, leadCol).getValues()[0];
-  const selectedValue = String(fullRowData[leadCol - 1] || "").trim();
-
-  if (!selectedValue) return;
-
-  Logger.log(`Lead routing: "${selectedValue}" on ${sheetName} row ${row}`);
-
-  // Duplicate-run guard (cache-based)
-  const lockKey = `${sheetName}_${row}_${leadCol}_${selectedValue}`;
+function _handleLeadRouting(e, sheet, sheetName, row) {
   const cache = CacheService.getScriptCache();
-  if (cache.get(lockKey)) {
-    Logger.log(`Duplicate trigger blocked for key: "${lockKey}"`);
-    return;
-  }
-  cache.put(lockKey, 'running', 300); // 5 min dedup window (was 60s)
+  let lockKey = null;
 
-  // Helper: lookup from local batch data
-  const val = (headerName) => {
-    const idx = headerMap[headerName];
-    if (!idx) return '';
-    return fullRowData[idx - 1]; // 0-indexed adjustment
-  };
+  try {
+    // Build header map for val() helper
+    const lastCol = sheet.getLastColumn();
+    const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headerMap = {};
+    headerRow.forEach((h, i) => { if (h) headerMap[String(h).trim()] = i + 1; });
 
-  // ── Path A: Copy row to internal flag tab ──────────────────────────────────
-  if (FLAG_TAB_MAP.hasOwnProperty(selectedValue)) {
-    const destSheet = e.source.getSheetByName(selectedValue);
-    if (!destSheet) {
-      SpreadsheetApp.getUi().alert(`Tab "${selectedValue}" not found in this spreadsheet.`);
+    // Batch read everything from Col 1 to COL_SEND_LEAD in one single hit
+    const fullRowData = sheet.getRange(row, 1, 1, COL_SEND_LEAD).getValues()[0];
+    const selectedValue = String(fullRowData[COL_SEND_LEAD - 1] || "").trim();
+
+    if (!selectedValue) return;
+
+    Logger.log(`Lead routing: "${selectedValue}" on ${sheetName} row ${row}`);
+
+    // Duplicate-run guard (cache-based)
+    lockKey = `${sheetName}_${row}_${COL_SEND_LEAD}_${selectedValue}`;
+    if (cache.get(lockKey)) {
+      Logger.log(`Duplicate trigger blocked for key: "${lockKey}"`);
       return;
     }
-    const startCol = headerMap[HEADER_FIRST_DATA];
-    if (!startCol) return;
+    cache.put(lockKey, 'running', 300); // 5 min dedup window
 
-    const sliceStart = startCol - 1;
-    const sliceEnd = leadCol; // non-inclusive in slice, but leadCol is 1-indexed so it works
-    const rowValues = fullRowData.slice(sliceStart, sliceEnd);
+    // Helper: lookup from local batch data
+    const val = (headerName) => {
+      const idx = headerMap[headerName];
+      if (!idx) return '';
+      return fullRowData[idx - 1]; // 0-indexed adjustment
+    };
 
-    _appendRow(destSheet, rowValues);
-    Logger.log(`Path A: Copied row to "${selectedValue}"`);
-    return;
-  }
+    // ── Path A: Copy row to internal flag tab ──────────────────────────────────
+    if (FLAG_TAB_MAP.hasOwnProperty(selectedValue)) {
+      const destSheet = e.source.getSheetByName(selectedValue);
+      if (!destSheet) {
+        e.source.toast(`Tab "${selectedValue}" not found in this spreadsheet.`, '⚠️ Error', 8);
+        return;
+      }
+      const startCol = headerMap[HEADER_FIRST_DATA];
+      if (!startCol) return;
 
-  // ── Path B: Schedule Meeting → external Meeting Log ───────────────────────
-  if (selectedValue === 'Schedule Meeting') {
-    const meetingRow = [
-      (sheetName === 'LABS') ? 'IMMUNE' : '',
-      val('Owner'),
-      'New',
-      new Date(),
-      val('Legalbusinessname'),
-      val('AuthOfficialName'),
-      val('OfficePhone'),
-      val('Email'),
-    ];
-    const meetingSS = SpreadsheetApp.openById(MEETING_LOG_SS_ID);
-    const meetingSheet = meetingSS.getSheetByName('New Meetings');
-    if (!meetingSheet) {
-      SpreadsheetApp.getUi().alert('Tab "New Meetings" not found in Meeting Log.');
+      const sliceStart = startCol - 1;
+      const sliceEnd = COL_SEND_LEAD;
+      const rowValues = fullRowData.slice(sliceStart, sliceEnd);
+
+      _appendRow(destSheet, rowValues);
+      Logger.log(`Path A: Copied row to "${selectedValue}"`);
       return;
     }
-    _appendRow(meetingSheet, meetingRow);
-    Logger.log('Path B: Meeting row appended');
-    return;
-  }
 
-  // ── Path C: Send Lab Email → external Email Automation SS ─────────────────
-  if (selectedValue === 'Send Lab Email') {
-    const emailRow = [
-      new Date(),
-      val('Legalbusinessname'),
-      val('AuthOfficialName'),
-      val('Email'),
-    ];
-    const emailSS = SpreadsheetApp.openById(EMAIL_AUTO_SS_ID);
-    const emailSheet = emailSS.getSheetByName('Sheet1');
-    if (!emailSheet) {
-      SpreadsheetApp.getUi().alert('Tab "Sheet1" not found in Email Automation.');
+    // ── Path B: Schedule Meeting → external Meeting Log ───────────────────────
+    if (selectedValue === 'Schedule Meeting') {
+      const meetingRow = [
+        (sheetName === 'LABS') ? 'IMMUNE' : '',
+        val('Owner'),
+        'New',
+        new Date(),
+        val('Legalbusinessname'),
+        val('AuthOfficialName'),
+        val('OfficePhone'),
+        val('Email'),
+      ];
+      const meetingSS = SpreadsheetApp.openById(MEETING_LOG_SS_ID);
+      const meetingSheet = meetingSS.getSheetByName('New Meetings');
+      if (!meetingSheet) {
+        e.source.toast('Tab "New Meetings" not found in Meeting Log.', '⚠️ Error', 8);
+        return;
+      }
+      _appendRow(meetingSheet, meetingRow);
+      Logger.log('Path B: Meeting row appended');
       return;
     }
-    _appendRow(emailSheet, emailRow);
-    Logger.log('Path C: Email row appended');
-    return;
-  }
 
-  Logger.log(`No path matched for value: "${selectedValue}"`);
+    // ── Path C: Send Lab Email → external Email Automation SS ─────────────────
+    if (selectedValue === 'Send Lab Email') {
+      const emailRow = [
+        new Date(),
+        val('Legalbusinessname'),
+        val('AuthOfficialName'),
+        val('Email'),
+      ];
+      const emailSS = SpreadsheetApp.openById(EMAIL_AUTO_SS_ID);
+      const emailSheet = emailSS.getSheetByName('Sheet1');
+      if (!emailSheet) {
+        e.source.toast('Tab "Sheet1" not found in Email Automation.', '⚠️ Error', 8);
+        return;
+      }
+      _appendRow(emailSheet, emailRow);
+      Logger.log('Path C: Email row appended');
+      return;
+    }
+
+    Logger.log(`No path matched for value: "${selectedValue}"`);
+
+  } catch (err) {
+    if (lockKey) cache.remove(lockKey);
+    Logger.log(`Lead routing error on ${sheetName} R${row}: ${err.toString()}`);
+    e.source.toast(`Routing failed: ${err.message}`, '⚠️ Error', 8);
+  }
 }
 
 // =============================================================================
