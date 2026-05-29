@@ -55,28 +55,29 @@ function beginExecutionLog_(scriptName, context, startedAt) {
   ];
   const nextRow = sheet.getLastRow() + 1;
   sheet.getRange(nextRow, 1, 1, row.length).setValues([row]);
-  return { sheet: sheet, row: nextRow, executionId: executionId, startedAt: startedAt, scriptName: scriptName, user: user };
+  return { sheet: sheet, row: nextRow };
 }
 
 function endExecutionLog_(entry, status, durationMs, message, context) {
   if (!entry || !entry.sheet || !entry.row) return;
+  const sheet = entry.sheet;
   const values = [
     [
-      entry.executionId,
-      entry.startedAt,
+      sheet.getRange(entry.row, 1).getValue(),
+      sheet.getRange(entry.row, 2).getValue(),
       status,
-      entry.scriptName,
+      sheet.getRange(entry.row, 4).getValue(),
       getContextValue_(context, 'sheet'),
       getContextValue_(context, 'row'),
       getContextValue_(context, 'column'),
       getContextValue_(context, 'trigger'),
       durationMs,
-      entry.user,
+      sheet.getRange(entry.row, 10).getValue(),
       message,
       stringifyContext_(context),
     ],
   ];
-  entry.sheet.getRange(entry.row, 1, 1, values[0].length).setValues(values);
+  sheet.getRange(entry.row, 1, 1, values[0].length).setValues(values);
 }
 
 function ensureExecutionLogSheet_() {
