@@ -44,6 +44,7 @@ To secure the sheet for multiple concurrent dialers, a multi-phase **Hardening P
 * **Timestamp Preservation:** Rewrote the deduplication parser to isolate parseable dates from unparseable date strings. Unparseable entries are preserved at the bottom of Column Q rather than deleted.
 * **Whitelist Protections:** Locked dangerous administrative tools like `capitalizeHeadersBatch` to a whitelisted array of tabs, blocking execution on tracking/backup sheets.
 * **NPI API Caching:** Added a 6-hour TTL cache in `CacheService` for NPI queries, dramatically reducing latency and saving 99% of daily API quotas.
+* **DNC Tab Search Integration:** Added the `DNC` (Do Not Call) worksheet to `lookupTabs` in both `runMasterSearch` and `runNewLabsMasterSearch` to seamlessly identify and flag DNC contacts in Column A.
 
 ### 3. Iteration 3 — Logging & Polish (P2/P3) ✅
 * **Owner-Only Log Sheets:** Programmatically set `Protection` on logging worksheets. Only the spreadsheet owner can modify `LOGS` and `EXEC_LOG` tabs.

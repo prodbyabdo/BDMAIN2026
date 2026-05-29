@@ -24,6 +24,7 @@ When an owner is selected for a lead, or lead routing dropdown values are select
 ### 3. Exclusions & Status Directories
 * **`NI / Not Eligible`**: Leads qualified as Not Interested (NI) or medically ineligible.
 * **`Disconnected`**: Phone numbers flagged as disconnected or invalid ("Dis/Wn"). Used to filter out dead numbers during searches.
+* **`DNC`**: Do Not Call registry. Phone numbers and names on this tab are scanned by Master Search to automatically flag and exclude them from outreach.
 * **`DMEDesk Booked`**: Leads successfully routed as booked appointments.
 * **`Deactivated`**: Holds deactivated NPI numbers (checked in Column O) to exclude dead healthcare provider records.
 
