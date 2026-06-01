@@ -65,7 +65,7 @@ All column references are 1-based indices (matching standard Google Apps Script 
 ### 📄 `menu.js`
 * **`onOpen()`**: Registers the custom menu **Custom Tools** in the Sheets UI.
 * **`runMasterSearch()`**: Coordinates bulk scanning for `MAIN` and `LABS` sheets.
-* **`runNewLabsMasterSearch()`**: Coordinates bulk scanning for `NEWDME` and `NEWLABS` sheets.
+* **`runNewLabsMasterSearch()`**: Coordinates bulk scanning for `NEWDME` sheet.
 * **`runMasterSearchCore_(options)`**: Lock-guarded scanning engine that performs O(1) set-based match computations.
 * **`capitalizeHeadersBatch()`**: Uppercases names on whitelisted active tabs (`Legalbusinessname` / `AuthOfficialName`).
 * **`reformatPhoneNumbers()`**: Standardizes phone number grids to `XXX-XXX-XXXX` format.

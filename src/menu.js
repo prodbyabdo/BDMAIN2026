@@ -36,44 +36,38 @@ const QPP_FEEDBACK_TAB = "QPP_FEEDBACK";
 //   No NPI/QPP  -> normal flag search
 // =============================================================================
 function runMasterSearch() {
+  const tabs = ["MAIN", "LABS"];
+  const lookups = [
+    { name: "Ben", tab: "Ben Flags" },
+    { name: "Jimmy", tab: "Jimmy Flags" },
+    { name: "Selene", tab: "Selene Flags" },
+    { name: "Jane", tab: "Jane Flags" },
+    { name: "NI", tab: "NI / Not Eligible" },
+    { name: "Dis/Wn", tab: "Disconnected" },
+    { name: "DNC", tab: "DNC" },
+    { name: "AI", tab: "DMEDesk Booked" }
+  ];
   if (typeof runWithExecutionLog_ === 'function') {
     return runWithExecutionLog_('runMasterSearch', { trigger: 'menu' }, () => {
       runMasterSearchCore_({
-        targetTabs: ["MAIN", "LABS"],
-        lookupTabs: [
-          { name: "Ben", tab: "Ben Flags" },
-          { name: "Jimmy", tab: "Jimmy Flags" },
-          { name: "Selene", tab: "Selene Flags" },
-          { name: "Jane", tab: "Jane Flags" },
-          { name: "NI", tab: "NI / Not Eligible" },
-          { name: "Dis/Wn", tab: "Disconnected" },
-          { name: "DNC", tab: "DNC" },
-          { name: "AI", tab: "DMEDesk Booked" }
-        ],
-        toastSuffix: "MAIN & LABS"
+        targetTabs: tabs,
+        lookupTabs: lookups,
+        toastSuffix: tabs.join(' & ')
       });
     });
   }
 
   runMasterSearchCore_({
-    targetTabs: ["MAIN", "LABS"],
-    lookupTabs: [
-      { name: "Ben", tab: "Ben Flags" },
-      { name: "Jimmy", tab: "Jimmy Flags" },
-      { name: "Selene", tab: "Selene Flags" },
-      { name: "Jane", tab: "Jane Flags" },
-      { name: "NI", tab: "NI / Not Eligible" },
-      { name: "Dis/Wn", tab: "Disconnected" },
-      { name: "DNC", tab: "DNC" },
-      { name: "AI", tab: "DMEDesk Booked" }
-    ],
-    toastSuffix: "MAIN & LABS"
+    targetTabs: tabs,
+    lookupTabs: lookups,
+    toastSuffix: tabs.join(' & ')
   });
 }
 
 function runNewLabsMasterSearch() {
+  const tabs = ["NEWDME"];
   runMasterSearchCore_({
-    targetTabs: ["NEWLABS"],
+    targetTabs: tabs,
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
@@ -85,7 +79,7 @@ function runNewLabsMasterSearch() {
       { name: "MAIN", tab: "MAIN" },
       { name: "LABS", tab: "LABS" }
     ],
-    toastSuffix: "NEWLABS & NEWDME"
+    toastSuffix: tabs.join(' & ')
   });
 }
 
