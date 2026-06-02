@@ -2,8 +2,8 @@ const SCRIPT_CATALOG_SHEET_NAME = 'SCRIPT_CATALOG';
 
 const SCRIPT_CATALOG = [
   { file: 'menu.js', name: 'onOpen', purpose: 'Builds the custom menu in the sheet UI.', trigger: 'Spreadsheet open', output: 'Menu items', timing: 'Fast' },
-  { file: 'menu.js', name: 'runMasterSearch', purpose: 'Scans MAIN and LABS against flags, deactivated NPIs, and QPP feedback.', trigger: 'Manual menu action', output: 'Columns A-C on MAIN and LABS', timing: 'Heavy' },
-  { file: 'menu.js', name: 'runNewLabsMasterSearch', purpose: 'Scans NEWLABS against flags, deactivated NPIs, QPP feedback, and MAIN/LABS duplicates.', trigger: 'Manual menu action', output: 'Columns A-C on NEWLABS', timing: 'Heavy' },
+  { file: 'menu.js', name: 'runMasterSearch', purpose: 'Scans MAIN and LABS against flags and deactivated NPIs.', trigger: 'Manual menu action', output: 'Columns A-C on MAIN and LABS', timing: 'Heavy' },
+  { file: 'menu.js', name: 'runNewLabsMasterSearch', purpose: 'Scans NEWLABS against flags, deactivated NPIs, and MAIN/LABS duplicates.', trigger: 'Manual menu action', output: 'Columns A-C on NEWLABS', timing: 'Heavy' },
   { file: 'menu.js', name: 'capitalizeHeadersBatch', purpose: 'Uppercases name columns on the active sheet.', trigger: 'Manual menu action', output: 'Edited values in active sheet', timing: 'Fast' },
   { file: 'menu.js', name: 'reformatPhoneNumbers', purpose: 'Normalizes MAIN and LABS phone columns to 10-digit format.', trigger: 'Manual menu action', output: 'Formatted phone columns', timing: 'Fast' },
   { file: 'menu.js', name: 'unmergeAllCells', purpose: 'Breaks apart merged cells on the active sheet.', trigger: 'Manual menu action', output: 'Merged ranges removed', timing: 'Fast' },

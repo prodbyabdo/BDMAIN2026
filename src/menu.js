@@ -21,19 +21,10 @@ function onOpen() {
     .addToUi();
 }
 // =============================================================================
-// SINGLE CONFIG POINT - rename the tab here and everything follows
-// QPP_FEEDBACK tab layout: col A = NPI | col B = CLASS | col C = FEEDBACK
-// =============================================================================
-const QPP_FEEDBACK_TAB = "QPP_FEEDBACK";
-
-// =============================================================================
 // MASTER SEARCH (Optimized - Set-based O(1) lookups)
 // Col A priority per row:
-//   DEAC + QPP  -> "DEAC | EL"  (coexist)
 //   DEAC only   -> "DEAC"
-//   QPP + flag  -> "EL | Ben"
-//   QPP only    -> "EL"
-//   No NPI/QPP  -> normal flag search
+//   No DEAC     -> normal flag search
 // =============================================================================
 function runMasterSearch() {
   const tabs = ["MAIN", "LABS"];
@@ -93,7 +84,6 @@ function runMasterSearchCore_(options) {
   }
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const QPP_TAB_NAME = typeof QPP_FEEDBACK_TAB !== 'undefined' ? QPP_FEEDBACK_TAB : "QPP_FEEDBACK";
     const targetTabs = options.targetTabs || [];
     const lookupTabs = options.lookupTabs || [];
     const toastSuffix = options.toastSuffix || targetTabs.join(" & ");
