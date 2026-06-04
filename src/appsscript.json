@@ -4,25 +4,25 @@
     "enabledAdvancedServices": [
       {
         "userSymbol": "Gmail",
-        "version": "v1",
-        "serviceId": "gmail"
+        "serviceId": "gmail",
+        "version": "v1"
       },
       {
         "userSymbol": "Drive",
-        "version": "v3",
-        "serviceId": "drive"
+        "serviceId": "drive",
+        "version": "v3"
       },
       {
         "userSymbol": "Sheets",
-        "version": "v4",
-        "serviceId": "sheets"
+        "serviceId": "sheets",
+        "version": "v4"
       }
     ]
   },
-  "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8",
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "ANYONE"
-  }
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8"
 }

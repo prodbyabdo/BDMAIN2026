@@ -7,7 +7,7 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Custom Tools')
     .addItem('Run Master Search', 'runMasterSearch')
-    .addItem('Run NEWLABS Master Search', 'runNewLabsMasterSearch')
+    .addItem('Run NEW Master Search', 'runNewLabsMasterSearch')
     .addSeparator()
     .addItem('Capitalize Business & Names', 'capitalizeHeadersBatch')
     .addItem('Clean & Format Phone Numbers', 'reformatPhoneNumbers')
@@ -35,6 +35,7 @@ function runMasterSearch() {
     { name: "Jane", tab: "Jane Flags" },
     { name: "NI", tab: "NI / Not Eligible" },
     { name: "Dis/Wn", tab: "Disconnected" },
+    { name: "Cleads", tab: "mirror for chasers" },
     { name: "DNC", tab: "DNC" },
     { name: "AI", tab: "DMEDesk Booked" }
   ];
@@ -60,17 +61,24 @@ function runNewLabsMasterSearch() {
   runMasterSearchCore_({
     targetTabs: tabs,
     lookupTabs: [
-      { name: "Ben", tab: "Ben Flags" },
-      { name: "Jimmy", tab: "Jimmy Flags" },
-      { name: "Selene", tab: "Selene Flags" },
-      { name: "Jane", tab: "Jane Flags" },
-      { name: "NI", tab: "NI / Not Eligible" },
-      { name: "Dis/Wn", tab: "Disconnected" },
-      { name: "DNC", tab: "DNC" },
-      { name: "MAIN", tab: "MAIN" },
-      { name: "LABS", tab: "LABS" }
+    
+    { name: "Ben", tab: "Ben Flags" },
+    { name: "Jimmy", tab: "Jimmy Flags" },
+    { name: "Selene", tab: "Selene Flags" },
+    { name: "Jane", tab: "Jane Flags" },
+    { name: "NI", tab: "NI / Not Eligible" },
+    { name: "Dis/Wn", tab: "Disconnected" },
+    { name: "DNC", tab: "DNC" },
+    { name: "AI", tab: "DMEDesk Booked" },
+    { name: "Cleads", tab: "mirror for chasers" },
+    { name: "MAIN", tab: "MAIN"},
+    { name: "LABS", tab: "LABS"}
+    
+    
     ],
-    toastSuffix: tabs.join(' & ')
+    toastSuffix: tabs.join(' & '),
+    rowlimit: 10000
+
   });
 }
 
@@ -359,7 +367,7 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["NEWLABS"];
+  const targetTabs = ["NEWDME"];
   const columnIndices = [10, 12];
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
