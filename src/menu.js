@@ -83,13 +83,6 @@ function runNewLabsMasterSearch() {
 }
 
 function runMasterSearchCore_(options) {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) {
-    SpreadsheetApp.getActiveSpreadsheet().toast(
-      'Another search is running. Try again in 30s.', 'Busy', 5
-    );
-    return;
-  }
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const targetTabs = options.targetTabs || [];
@@ -99,27 +92,57 @@ function runMasterSearchCore_(options) {
     console.time("MasterSearch_Total");
 
     // ---------------------------------------------------------------------------
-    // 1. Config & Data Loading
+    // 1. Config & Data Loading via batchGet
     // ---------------------------------------------------------------------------
-    ss.toast("Loading lookup data...", "Search", 2);
+    ss.toast("Loading lookup data in batch...", "Search", 2);
 
-    // Load raw data for lookup tabs (Optimized: fetching only cols H to L, which is 8 to 12)
-    const lookupData = {};
+    const ssId = ss.getId();
+    const ranges = [];
+    const rangeMetadata = [];
+
     lookupTabs.forEach(config => {
-      const sheet = ss.getSheetByName(config.tab);
-      if (sheet && sheet.getLastRow() >= 2) {
-        const lastCol = sheet.getLastColumn();
-        if (lastCol >= 12) {
-          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, 5).getValues();
-        } else if (lastCol >= 8) {
-          lookupData[config.name] = sheet.getRange(2, 8, sheet.getLastRow() - 1, lastCol - 7).getValues();
-        } else {
-          lookupData[config.name] = [];
-        }
-      } else {
-        lookupData[config.name] = [];
+      if (ss.getSheetByName(config.tab)) {
+        ranges.push(`'${config.tab}'!H2:L`);
+        rangeMetadata.push({ type: 'lookup', name: config.name });
       }
     });
+
+    if (ss.getSheetByName("IMPORT_DATA")) {
+      ranges.push(`'IMPORT_DATA'!O2:P`);
+      rangeMetadata.push({ type: 'import' });
+    }
+
+    if (ss.getSheetByName("Deactivated")) {
+      ranges.push(`'Deactivated'!O2:O`);
+      rangeMetadata.push({ type: 'deac' });
+    }
+
+    const lookupData = {};
+    const deactivatedNPIs = new Set();
+    let meetingRows = [];
+
+    if (ranges.length > 0) {
+      console.time("batchGet_API_Call");
+      const response = Sheets.Spreadsheets.Values.batchGet(ssId, { ranges: ranges });
+      const valueRanges = response.valueRanges || [];
+      console.timeEnd("batchGet_API_Call");
+
+      valueRanges.forEach((vr, index) => {
+        const meta = rangeMetadata[index];
+        const values = vr.values || [];
+
+        if (meta.type === 'lookup') {
+          lookupData[meta.name] = values;
+        } else if (meta.type === 'import') {
+          meetingRows = values;
+        } else if (meta.type === 'deac') {
+          for (let r = 0; r < values.length; r++) {
+            const sNpi = String(values[r][0] || "").trim();
+            if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
+          }
+        }
+      });
+    }
 
     // BUILD UNIFIED HASH INDEX MAPS (O(1) lookups)
     const nameMap = new Map();
@@ -153,43 +176,22 @@ function runMasterSearchCore_(options) {
     });
 
     // Populate maps from IMPORT_DATA (meetings)
-    const importSheet = ss.getSheetByName("IMPORT_DATA");
-    if (importSheet && importSheet.getLastRow() >= 2) {
-      const lastCol = importSheet.getLastColumn();
-      if (lastCol >= COL_IMPORT_PHONE) {
-        const meetingData = importSheet.getRange(2, COL_IMPORT_NAME, importSheet.getLastRow() - 1, COL_IMPORT_WIDTH).getValues();
-        for (let r = 0; r < meetingData.length; r++) {
-          if (meetingData[r][0]) {
-            addMatch(nameMap, clean(meetingData[r][0]), "Meeting");
-          }
-          if (meetingData[r][1]) {
-            addMatch(phoneMap, cleanPhone(meetingData[r][1]), "Meeting");
-          }
+    if (meetingRows.length > 0) {
+      for (let r = 0; r < meetingRows.length; r++) {
+        const row = meetingRows[r];
+        if (row[0]) {
+          addMatch(nameMap, clean(row[0]), "Meeting");
+        }
+        if (row.length > 1 && row[1]) {
+          addMatch(phoneMap, cleanPhone(row[1]), "Meeting");
         }
       }
     }
 
-    // Load Deactivated NPIs (potentially huge)
-    const deactivatedNPIs = new Set();
-    const deacSheet = ss.getSheetByName("Deactivated");
-    if (deacSheet && deacSheet.getLastRow() >= 2) {
-      console.time("LoadDeactivated");
-      const deacValues = deacSheet.getRange(2, COL_DEAC_NPI, deacSheet.getLastRow() - 1, 1).getValues();
-      for (let r = 0; r < deacValues.length; r++) {
-        const sNpi = String(deacValues[r][0] || "").trim();
-        if (sNpi && sNpi !== "0") deactivatedNPIs.add(sNpi);
-      }
-      console.timeEnd("LoadDeactivated");
-    }
-
     // ---------------------------------------------------------------------------
-    // 2. Determine Tabs to Scan
+    // 2. Determine Tabs to Scan & Process Each Tab (Scoped Lock)
     // ---------------------------------------------------------------------------
     ss.toast(`Scanning ${toastSuffix}...`, "Search");
-
-    // ---------------------------------------------------------------------------
-    // 3. Process Each Tab
-    // ---------------------------------------------------------------------------
     const processedCache = new Map();
 
     targetTabs.forEach(tabName => {
@@ -202,79 +204,92 @@ function runMasterSearchCore_(options) {
 
       console.time(`Process_${tabName}`);
 
-      _backupColumns(ss, sheet, tabName, numRows);
-
-      // Get values for the entire sheet (Cols A to O)
-      const maxCol = 15; // Col O (NPI)
-      const targetValues = sheet.getRange(2, 1, numRows, maxCol).getValues();
-
-      const outputRows = [];
-
-      for (let i = 0; i < numRows; i++) {
-        const npi = String(targetValues[i][COL_NPI - 1] || "").trim();
-        const hasNpi = npi && npi !== "0";
-
-        const termName = clean(targetValues[i][COL_SEARCH_START - 1]); // Col H
-        const termPhone1 = cleanPhone(targetValues[i][COL_PHONE1 - 1]); // Col J
-        const termPhone2 = cleanPhone(targetValues[i][COL_PHONE2 - 1]); // Col L
-
-        // Cache Check: If already processed this exact lead, skip to save CPU
-        const cacheKey = (npi || "no_npi") + "|" + termName + "|" + termPhone1 + "|" + termPhone2;
-        if ((npi || termName || termPhone1 || termPhone2) && processedCache.has(cacheKey)) {
-          outputRows.push(processedCache.get(cacheKey));
-          continue;
-        }
-
-        const isDeac = hasNpi && deactivatedNPIs.has(npi);
-
-        const nameMatches = nameMap.get(termName);
-        const flagMatch = nameMatches ? Array.from(nameMatches).join(", ") : "";
-
-        const phone1Matches = phoneMap.get(termPhone1);
-        const phone1Match = phone1Matches ? Array.from(phone1Matches).join(", ") : "";
-
-        const phone2Matches = phoneMap.get(termPhone2);
-        const phone2Match = phone2Matches ? Array.from(phone2Matches).join(", ") : "";
-
-        let colA = "";
-        if (isDeac) {
-          colA = "DEAC";
-        } else {
-          colA = flagMatch;
-        }
-
-        const rowResult = [colA, phone1Match, phone2Match];
-
-        // Save to cache
-        if (npi || termName || termPhone1 || termPhone2) {
-          processedCache.set(cacheKey, rowResult);
-        }
-
-        outputRows.push(rowResult);
+      // Acquire lock only during processing and write back of the active target tab
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(15000)) {
+        ss.toast(`Skip processing ${tabName} - locked by another run.`, 'Busy', 5);
+        return;
       }
 
-      // Check if target sheet size changed during processing
-      if (sheet.getLastRow() !== lastRow) {
-        ss.toast(
-          `Row count changed (expected ${lastRow}, got ${sheet.getLastRow()}). Aborting write on ${tabName}.`,
-          '⚠️ Aborted', 10
-        );
-        return; // skip this tab, don't write
-      }
+      try {
+        _backupColumns(ss, sheet, tabName, numRows);
 
-      // High-Speed Bulk Write
-      if (outputRows.length > 0) {
-        sheet.getRange(2, 1, outputRows.length, 3).setValues(outputRows);
+        // Get values for the entire sheet (Cols A to O)
+        const maxCol = 15; // Col O (NPI)
+        const targetValues = sheet.getRange(2, 1, numRows, maxCol).getValues();
+
+        const outputRows = [];
+
+        for (let i = 0; i < numRows; i++) {
+          const npi = String(targetValues[i][COL_NPI - 1] || "").trim();
+          const hasNpi = npi && npi !== "0";
+
+          const termName = clean(targetValues[i][COL_SEARCH_START - 1]); // Col H
+          const termPhone1 = cleanPhone(targetValues[i][COL_PHONE1 - 1]); // Col J
+          const termPhone2 = cleanPhone(targetValues[i][COL_PHONE2 - 1]); // Col L
+
+          // Cache Check: If already processed this exact lead, skip to save CPU
+          const cacheKey = (npi || "no_npi") + "|" + termName + "|" + termPhone1 + "|" + termPhone2;
+          if ((npi || termName || termPhone1 || termPhone2) && processedCache.has(cacheKey)) {
+            outputRows.push(processedCache.get(cacheKey));
+            continue;
+          }
+
+          const isDeac = hasNpi && deactivatedNPIs.has(npi);
+
+          const nameMatches = nameMap.get(termName);
+          const flagMatch = nameMatches ? Array.from(nameMatches).join(", ") : "";
+
+          const phone1Matches = phoneMap.get(termPhone1);
+          const phone1Match = phone1Matches ? Array.from(phone1Matches).join(", ") : "";
+
+          const phone2Matches = phoneMap.get(termPhone2);
+          const phone2Match = phone2Matches ? Array.from(phone2Matches).join(", ") : "";
+
+          let colA = "";
+          if (isDeac) {
+            colA = "DEAC";
+          } else {
+            colA = flagMatch;
+          }
+
+          const rowResult = [colA, phone1Match, phone2Match];
+
+          // Save to cache
+          if (npi || termName || termPhone1 || termPhone2) {
+            processedCache.set(cacheKey, rowResult);
+          }
+
+          outputRows.push(rowResult);
+        }
+
+        // Check if target sheet size changed during processing
+        if (sheet.getLastRow() !== lastRow) {
+          ss.toast(
+            `Row count changed (expected ${lastRow}, got ${sheet.getLastRow()}). Aborting write on ${tabName}.`,
+            '⚠️ Aborted', 10
+          );
+          return;
+        }
+
+        // High-Speed Bulk Write
+        if (outputRows.length > 0) {
+          sheet.getRange(2, 1, outputRows.length, 3).setValues(outputRows);
+        }
+        SpreadsheetApp.flush();
+
+      } finally {
+        lock.releaseLock();
       }
-      SpreadsheetApp.flush();
 
       console.timeEnd(`Process_${tabName}`);
     });
 
     console.timeEnd("MasterSearch_Total");
     ss.toast(`Search complete on ${toastSuffix}`, "Done");
-  } finally {
-    lock.releaseLock();
+  } catch (error) {
+    console.error("Master Search Error: " + error.message);
+    throw error;
   }
 }
 

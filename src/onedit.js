@@ -337,8 +337,15 @@ function _appendRow(sheet, values) {
 /** Writes a log entry to the "LOGS" tab. */
 function logAction(status, sheetName, row, message, user) {
   try {
-    // Log to console (visible in Apps Script execution logs)
+    // Always log to console (visible in Apps Script execution logs)
     console.log(`[${status}] ${sheetName} R${row}: ${message} (${user})`);
+
+    // Only write to the Sheet "LOGS" tab for critical/actionable statuses
+    // This avoids flooding the sheet and causing lock contention on fast typing
+    const importantStatuses = ["SUCCESS", "ERROR", "LOCK_TIMEOUT", "TASK_CREATED", "TASK_ERROR"];
+    if (!importantStatuses.includes(status)) {
+      return;
+    }
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let logSheet = ss.getSheetByName("LOGS");
