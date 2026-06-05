@@ -84,7 +84,16 @@ graph TD
 
 ## 📂 Code Directory Layout
 
-All script files reside in the `src/` directory, facilitating simple workspace organization and version control syncing via `clasp`:
+All GAS source files reside in `src/` for clean `clasp` sync. One-off local utility scripts live in `scripts/` and are excluded from the Apps Script push.
+
+### `scripts/` — Local Utility Scripts (not synced to Apps Script)
+
+| File | Purpose |
+|:---|:---|
+| `scripts/extract_api_info.js` | One-off Node script to extract endpoint URLs from saved API docs HTML |
+| `scripts/filter_clia.py` | One-off Python script to filter CLIA registry CSV by specialty / accreditation |
+
+### `src/` — Apps Script Source
 
 * **[src/config.js](file:///c:/Users/ben.arthur/Desktop/BD%20MAIN%202026/src/config.js)**: The single source of truth for column index definitions, trigger columns, and external spreadsheet configurations.
 * **[src/menu.js](file:///c:/Users/ben.arthur/Desktop/BD%20MAIN%202026/src/menu.js)**: Holds the custom sheets menu (`onOpen`) and primary data manipulation utilities (Master Search, timestamp deduplication, cell unmerging).
