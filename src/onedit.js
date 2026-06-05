@@ -157,24 +157,31 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
     }
   }
 
-  // ── 4. SCRIPT-LEVEL LOCK (scope minimized to actual write operations) ────
-  const lock = LockService.getScriptLock();
+  // ── 4. ROW-LEVEL LOCK (prevents lock starvation by locking specific row via CacheService) ────
+  const rowLockKey = `lock_${sheetName}_${row}`;
   let lockAcquired = false;
   let isDateWritten = false;
   let logMessage = "";
   let logStatus = "SUCCESS";
 
   try {
-    // Increased timeout to 30s to be safe under load, but holding it for much less time
-    if (!lock.tryLock(30000)) {
-      logAction("LOCK_TIMEOUT", sheetName, row, "Could not acquire script lock in 30s", user);
+    // Try to acquire row-level lock from Cache. If locked, wait up to 1s before giving up.
+    let lockVal = cache.get(rowLockKey);
+    let attempts = 0;
+    while (lockVal && attempts < 5) {
+      Utilities.sleep(200);
+      lockVal = cache.get(rowLockKey);
+      attempts++;
+    }
+    if (lockVal) {
+      logAction("LOCK_TIMEOUT", sheetName, row, `Could not acquire row lock (held by: ${lockVal})`, user);
       return;
     }
+    cache.put(rowLockKey, user, 15); // Lock for 15 seconds
     lockAcquired = true;
 
-    // Fetch existing Q again under the lock to prevent overwriting if someone edited Q in parallel
-    const currentTSRaw = sheet.getRange(row, TIMESTAMP_COL).getValue();
-    const currentTS = String(currentTSRaw ?? "").trim();
+    // Use the timestamp retrieved from the single batch read outside the lock
+    const currentTS = existingTS;
 
     // Write Timestamp
     const formattedTS = Utilities.formatDate(now, Session.getScriptTimeZone(), "M/d/yyyy HH:mm:ss");
@@ -222,7 +229,7 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
     logMessage = err.toString();
   } finally {
     if (lockAcquired) {
-      lock.releaseLock();
+      cache.remove(rowLockKey);
     }
   }
 

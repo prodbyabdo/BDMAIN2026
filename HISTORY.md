@@ -65,7 +65,7 @@ To optimize dialer prospecting efficiency, a high-speed verification engine was 
 * **Double-Layer Caching:** Verified active numbers are written to `Verified_Valid`, and dead lines are written to `Disconnected` as well as updated to "Dis/Wn" on active sheets. Subscriptions and quotas are preserved by checking caches first.
 
 ---
- sss
+
 ## 💡 Key Design Decisions & Rationale
 
 ### 1. Why `Africa/Cairo` Timezone?

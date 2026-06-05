@@ -125,3 +125,16 @@ Ensure the following API services are enabled within the Apps Script editor proj
 * **Access Restrictions:** The Web App deployment in `appsscript.json` is configured with `"access": "ANYONE"` to demand Google account authentication for execution, blocking anonymous execution.
 * **Protected Worksheets:** System critical log tabs (`LOGS` and `EXEC_LOG`) are locked down to owner-only permissions programmatically on creation, preventing unauthorized tampering by other sheet users.
 * **Timezone Standard:** All spreadsheet logs and comment timestamps are generated relative to the `Africa/Cairo` timezone (UTC+2) to match headquarter operations.
+
+---
+
+## 📖 Further Reading
+
+| Doc | Description |
+|:---|:---|
+| [INDEX.md](./INDEX.md) | Full tab, column, and code module reference |
+| [HISTORY.md](./HISTORY.md) | Evolutionary timeline and key design decisions |
+| [docs/CONTRIBUTING.md](./docs/CONTRIBUTING.md) | Development workflow, code rules, and pre-push checklist |
+| [docs/CODE_DOCUMENTATION.md](./docs/CODE_DOCUMENTATION.md) | Detailed per-function documentation |
+| [docs/OBSERVABILITY_SETUP.md](./docs/OBSERVABILITY_SETUP.md) | `EXEC_LOG` and `LOGS` setup guide |
+| [docs/GCP_AUTH_GUIDE.md](./docs/GCP_AUTH_GUIDE.md) | GCP OAuth and API credentials guide |
