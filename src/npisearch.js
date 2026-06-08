@@ -5,7 +5,7 @@
  * @return {Array<Array<string>>} The requested data.
  * @customfunction
  */
-function cbgetnpi(range, fields = "company") {
+/** function cbgetnpi(range, fields = "company") {
   if (!range) return [["No Input"]];
 
   // Normalize input: handles single cells, 1D arrays, and 2D arrays
@@ -86,4 +86,4 @@ function cbgetnpi(range, fields = "company") {
       return resultsMap[match[1]] || requestedFields.map(() => "No Data");
     });
   });
-}
+} **/

@@ -38,6 +38,7 @@ function runMasterSearch() {
     { name: "Cleads", tab: "mirror for chasers" },
     { name: "DNC", tab: "DNC" },
     { name: "AI", tab: "DMEDesk Booked" }
+    
   ];
   if (typeof runWithExecutionLog_ === 'function') {
     return runWithExecutionLog_('runMasterSearch', { trigger: 'menu' }, () => {
@@ -62,22 +63,22 @@ function runNewLabsMasterSearch() {
     targetTabs: tabs,
     lookupTabs: [
     
-    { name: "Ben", tab: "Ben Flags" },
-    { name: "Jimmy", tab: "Jimmy Flags" },
-    { name: "Selene", tab: "Selene Flags" },
-    { name: "Jane", tab: "Jane Flags" },
-    { name: "NI", tab: "NI / Not Eligible" },
-    { name: "Dis/Wn", tab: "Disconnected" },
-    { name: "DNC", tab: "DNC" },
-    { name: "AI", tab: "DMEDesk Booked" },
+   // { name: "Ben", tab: "Ben Flags" },
+   // { name: "Jimmy", tab: "Jimmy Flags" },
+   // { name: "Selene", tab: "Selene Flags" },
+   // { name: "Jane", tab: "Jane Flags" },
+   // { name: "NI", tab: "NI / Not Eligible" },
+   // { name: "Dis/Wn", tab: "Disconnected" },
+   // { name: "DNC", tab: "DNC" },
+   // { name: "AI", tab: "DMEDesk Booked" },
     { name: "Cleads", tab: "mirror for chasers" },
-    { name: "MAIN", tab: "MAIN"},
-    { name: "LABS", tab: "LABS"}
-    
+   // { name: "MAIN", tab: "MAIN" },
+   // { name: "LABS", tab: "LABS" } //
     
     ],
     toastSuffix: tabs.join(' & '),
-    rowlimit: 10000
+    startRow: 1, 
+    endRow: 15000
 
   });
 }
@@ -372,6 +373,8 @@ function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const targetTabs = ["NEWDME"];
   const columnIndices = [10, 12];
+  const startRow = 2;
+  const endRow = 5000; 
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
     if (!sheet) return;
