@@ -6,8 +6,8 @@
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Custom Tools')
-    .addItem('Run Master Search', 'runMasterSearch')
-    .addItem('Run NEW Master Search', 'runNewLabsMasterSearch')
+    .addItem('Run Main Search', 'runMasterSearch')
+    .addItem('Run NEWLEADS Search', 'runNewLabsMasterSearch')
     .addSeparator()
     .addItem('Capitalize Business & Names', 'capitalizeHeadersBatch')
     .addItem('Clean & Format Phone Numbers', 'reformatPhoneNumbers')
@@ -68,18 +68,18 @@ function runNewLabsMasterSearch() {
    // { name: "Selene", tab: "Selene Flags" },
    // { name: "Jane", tab: "Jane Flags" },
    // { name: "NI", tab: "NI / Not Eligible" },
-   // { name: "Dis/Wn", tab: "Disconnected" },
-   // { name: "DNC", tab: "DNC" },
+    // { name: "Dis/Wn", tab: "Disconnected" },
+    { name: "DNC", tab: "DNC" },
    // { name: "AI", tab: "DMEDesk Booked" },
     { name: "Cleads", tab: "mirror for chasers" },
-   // { name: "MAIN", tab: "MAIN" },
+    // { name: "MAIN", tab: "MAIN" },
    // { name: "LABS", tab: "LABS" } //
     
     ],
     toastSuffix: tabs.join(' & '),
-    startRow: 1, 
-    endRow: 15000
-
+    startRow: 10000,
+    endRow: 26000,
+    chunkSize: 3000  
   });
 }
 
@@ -373,25 +373,31 @@ function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const targetTabs = ["NEWDME"];
   const columnIndices = [10, 12];
-  const startRow = 2;
-  const endRow = 5000; 
+
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
     if (!sheet) return;
-    const lastRow = sheet.getLastRow();
+    const lastRow = Math.min(sheet.getLastRow(), 25000); // cap safety
     if (lastRow < 2) return;
+
     columnIndices.forEach(colIndex => {
-      const range = sheet.getRange(2, colIndex, lastRow - 1, 1);
-      const newValues = range.getValues().map(row => {
-        const num = String(row[0] || '').replace(/\D/g, '');
-        return (num.length === 10)
-          ? [`${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6, 10)}`]
-          : [row[0]];
-      });
-      range.setValues(newValues);
+      // Process in chunks of 5000 to avoid timeout
+      const CHUNK = 5000;
+      for (let startR = 2; startR <= lastRow; startR += CHUNK) {
+        const count = Math.min(CHUNK, lastRow - startR + 1);
+        const range = sheet.getRange(startR, colIndex, count, 1);
+        const newValues = range.getValues().map(row => {
+          const num = String(row[0] || '').replace(/\D/g, '');
+          return (num.length === 10)
+            ? [`${num.slice(0,3)}-${num.slice(3,6)}-${num.slice(6,10)}`]
+            : [row[0]];
+        });
+        range.setValues(newValues);
+        SpreadsheetApp.flush();
+      }
     });
   });
-  SpreadsheetApp.getActiveSpreadsheet().toast('Phone numbers formatted on MAIN and LABS.');
+  SpreadsheetApp.getActiveSpreadsheet().toast('Phone numbers formatted on NEWDME.');
 }
 
 function unmergeAllCells() {
