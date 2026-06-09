@@ -38,7 +38,7 @@ function runMasterSearch() {
     { name: "Cleads", tab: "mirror for chasers" },
     { name: "DNC", tab: "DNC" },
     { name: "AI", tab: "DMEDesk Booked" }
-    
+
   ];
   if (typeof runWithExecutionLog_ === 'function') {
     return runWithExecutionLog_('runMasterSearch', { trigger: 'menu' }, () => {
@@ -62,24 +62,24 @@ function runNewLabsMasterSearch() {
   runMasterSearchCore_({
     targetTabs: tabs,
     lookupTabs: [
-    
-   // { name: "Ben", tab: "Ben Flags" },
-   // { name: "Jimmy", tab: "Jimmy Flags" },
-   // { name: "Selene", tab: "Selene Flags" },
-   // { name: "Jane", tab: "Jane Flags" },
-   // { name: "NI", tab: "NI / Not Eligible" },
-    // { name: "Dis/Wn", tab: "Disconnected" },
-    { name: "DNC", tab: "DNC" },
-   // { name: "AI", tab: "DMEDesk Booked" },
-    { name: "Cleads", tab: "mirror for chasers" },
-    // { name: "MAIN", tab: "MAIN" },
-   // { name: "LABS", tab: "LABS" } //
-    
+
+      { name: "Ben", tab: "Ben Flags" },
+      { name: "Jimmy", tab: "Jimmy Flags" },
+      { name: "Selene", tab: "Selene Flags" },
+      { name: "Jane", tab: "Jane Flags" },
+      { name: "NI", tab: "NI / Not Eligible" },
+      { name: "Dis/Wn", tab: "Disconnected" },
+      { name: "DNC", tab: "DNC" },
+      { name: "AI", tab: "DMEDesk Booked" },
+      { name: "Cleads", tab: "mirror for chasers" },
+      // { name: "MAIN", tab: "MAIN" },
+      // { name: "LABS", tab: "LABS" }
+
     ],
     toastSuffix: tabs.join(' & '),
-    startRow: 10000,
-    endRow: 26000,
-    chunkSize: 3000  
+    startRow: 2,
+    endRow: 5000,
+    chunkSize: 3000
   });
 }
 
@@ -389,7 +389,7 @@ function reformatPhoneNumbers() {
         const newValues = range.getValues().map(row => {
           const num = String(row[0] || '').replace(/\D/g, '');
           return (num.length === 10)
-            ? [`${num.slice(0,3)}-${num.slice(3,6)}-${num.slice(6,10)}`]
+            ? [`${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6, 10)}`]
             : [row[0]];
         });
         range.setValues(newValues);
