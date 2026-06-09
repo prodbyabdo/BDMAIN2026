@@ -5,7 +5,7 @@
  * @return {Array<Array<string>>} The requested data.
  * @customfunction
  */
-/** function cbgetnpi(range, fields = "company") {
+ function cbgetnpi(range, fields = "company") {
   if (!range) return [["No Input"]];
 
   // Normalize input: handles single cells, 1D arrays, and 2D arrays
@@ -86,4 +86,127 @@
       return resultsMap[match[1]] || requestedFields.map(() => "No Data");
     });
   });
-} **/
+}
+function autofillNpiData() {
+  const ss     = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet  = ss.getSheetByName("NEWDME");
+
+  if (!sheet) {
+    ss.toast('Sheet "MAIN" not found.', 'Error', 5);
+    return;
+  }
+
+  const BATCH_SIZE  = 50;   // UrlFetchApp.fetchAll cap (safe limit)
+  const NPI_COL     = 15;   // O
+  const UPDATE_COL  = 7;    // G  — UpdateDate (also used as "already filled" guard)
+  const WRITE_START = 7;    // G  — first column we write into
+  const WRITE_WIDTH = 7;    // G–M (7 columns)
+
+  // Field order matches write columns G → M exactly
+  const FIELD_ORDER = [
+    "lastupdate",   // G — UpdateDate
+    "company",      // H — Legalbusinessname
+    "state",        // I — State
+    "companyphone", // J — OfficePhone
+    "person",       // K — AuthOfficialName
+    "phone",        // L — AuthPhone
+    "position",     // M — Position
+  ];
+  const FIELDS_STR = FIELD_ORDER.join(",");
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    ss.toast('No data rows found.', 'Done', 3);
+    return;
+  }
+
+  // ── 1. Read NPI col and UpdateDate col in one shot ──────────────────────
+  const npiValues    = sheet.getRange(2, NPI_COL,    lastRow - 1, 1).getValues();
+  const updateValues = sheet.getRange(2, UPDATE_COL, lastRow - 1, 1).getValues();
+
+  // ── 2. Build work list: rows that have an NPI but no UpdateDate yet ──────
+  const workList = []; // { sheetRow, npi }
+
+  const extractNpi = (cell) => {
+    if (!cell) return null;
+    let str = String(cell).trim();
+    if (str.includes('.')) str = str.split('.')[0];
+    const cleaned = str.replace(/\D/g, '');
+    return cleaned.length === 10 ? cleaned : null;
+  };
+
+  for (let i = 0; i < npiValues.length; i++) {
+    const npi        = extractNpi(npiValues[i][0]);
+    const hasUpdate  = String(updateValues[i][0] || "").trim() !== "";
+    if (npi && !hasUpdate) {
+      workList.push({ sheetRow: i + 2, npi }); // +2: 1-indexed + skip header
+    }
+  }
+
+  if (workList.length === 0) {
+    ss.toast('All NPI rows already have UpdateDate filled.', 'Done', 5);
+    return;
+  }
+
+  ss.toast(`Found ${workList.length} rows to fill. Starting...`, 'NPI Autofill', 4);
+
+  // ── 3. Process in batches ────────────────────────────────────────────────
+  let filled  = 0;
+  let errors  = 0;
+  const totalBatches = Math.ceil(workList.length / BATCH_SIZE);
+
+  for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    const batchStart = batchIndex * BATCH_SIZE;
+    const batch      = workList.slice(batchStart, batchStart + BATCH_SIZE);
+
+    ss.toast(
+      `Batch ${batchIndex + 1}/${totalBatches} — fetching ${batch.length} NPIs...`,
+      'NPI Autofill', 5
+    );
+
+    // Extract just the NPI numbers for bgetnpi (as a 2D column array)
+    const npiGrid = batch.map(item => [item.npi]);
+
+    let results;
+    try {
+      results = bgetnpi(npiGrid, FIELDS_STR);
+    } catch (err) {
+      console.error(`Batch ${batchIndex + 1} fetch failed: ${err.message}`);
+      errors += batch.length;
+      continue;
+    }
+
+    // ── 4. Write each row's results back to the sheet ──────────────────────
+    // bgetnpi returns a 2D array: one row per NPI, one col per field
+    // Since we pass a single-column grid, results[i] = [f1, f2, f3, ...]
+    for (let i = 0; i < batch.length; i++) {
+      const rowData = results[i]; // array of FIELD_ORDER.length values
+
+      if (!rowData || rowData.length === 0) {
+        errors++;
+        continue;
+      }
+
+      // Skip writing if fetch returned an error marker in the first field
+      const firstVal = String(rowData[0] || "").trim();
+      if (firstVal === "Fetch Error" || firstVal === "Not Found" || firstVal === "Error") {
+        console.warn(`Row ${batch[i].sheetRow} NPI ${batch[i].npi}: ${firstVal} — skipping write.`);
+        errors++;
+        continue;
+      }
+
+      sheet
+        .getRange(batch[i].sheetRow, WRITE_START, 1, WRITE_WIDTH)
+        .setValues([rowData]);
+
+      filled++;
+    }
+
+    SpreadsheetApp.flush();
+  }
+
+  ss.toast(
+    `Done. Filled: ${filled} rows. Skipped/errors: ${errors}.`,
+    'NPI Autofill Complete', 8
+  );
+}

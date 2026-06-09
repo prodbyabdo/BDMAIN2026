@@ -134,10 +134,10 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
   }
 
   // ── 2. SINGLE BATCH READ: Grab Col D and Col Q in one API roundtrip ───────
-  const rowVals = sheet.getRange(row, 1, 1, TIMESTAMP_COL).getValues()[0];
-  const colDRaw = rowVals[NAME_COL - 1]; // Column D (index 3)
+  const rowVals = sheet.getRange(row, NAME_COL, 1, TIMESTAMP_COL - NAME_COL + 1).getValues()[0];
+  const colDRaw = rowVals[0]; // Column D (first col of the narrow read)
   const colDValue = String(colDRaw ?? "").trim().toLowerCase();
-  const existingTSRaw = rowVals[TIMESTAMP_COL - 1]; // Column Q (index 16)
+  const existingTSRaw = rowVals[TIMESTAMP_COL - NAME_COL]; // Column Q offset
   const existingTS = String(existingTSRaw ?? "").trim();
 
   // ── 3. GET CELL VALUE FROM EVENT (immutable, not re-read) ──────────────
@@ -166,13 +166,7 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
 
   try {
     // Try to acquire row-level lock from Cache. If locked, wait up to 1s before giving up.
-    let lockVal = cache.get(rowLockKey);
-    let attempts = 0;
-    while (lockVal && attempts < 5) {
-      Utilities.sleep(200);
-      lockVal = cache.get(rowLockKey);
-      attempts++;
-    }
+    const lockVal = cache.get(rowLockKey);
     if (lockVal) {
       logAction("LOCK_TIMEOUT", sheetName, row, `Could not acquire row lock (held by: ${lockVal})`, user);
       return;

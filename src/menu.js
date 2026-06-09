@@ -1,6 +1,4 @@
-/**
- * 
- *  
+/** 
  * Custom Menu
  */
 function onOpen() {
@@ -8,6 +6,7 @@ function onOpen() {
   ui.createMenu('Custom Tools')
     .addItem('Run Main Search', 'runMasterSearch')
     .addItem('Run NEWLEADS Search', 'runNewLabsMasterSearch')
+    .addItem('Check NEWDME vs MAIN/LABS', 'runNewDmeVsMainLabsSearch')
     .addSeparator()
     .addItem('Capitalize Business & Names', 'capitalizeHeadersBatch')
     .addItem('Clean & Format Phone Numbers', 'reformatPhoneNumbers')
@@ -18,6 +17,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Create Filters', 'createLeadFilterViews')
     .addItem('Row Height Ben ', 'setRowHeightForBen')
+    .addItem('Reset NEWLEADS Scan', 'resetNewLabsScan')
     .addToUi();
 }
 // =============================================================================
@@ -38,7 +38,7 @@ function runMasterSearch() {
     { name: "Cleads", tab: "mirror for chasers" },
     { name: "DNC", tab: "DNC" },
     { name: "AI", tab: "DMEDesk Booked" }
-
+    
   ];
   if (typeof runWithExecutionLog_ === 'function') {
     return runWithExecutionLog_('runMasterSearch', { trigger: 'menu' }, () => {
@@ -58,11 +58,25 @@ function runMasterSearch() {
 }
 
 function runNewLabsMasterSearch() {
+  const props = PropertiesService.getScriptProperties();
+  const startRow = parseInt(props.getProperty('NEWDME_NEXT_ROW') || '2', 10);
+
   const tabs = ["NEWDME"];
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("NEWDME");
+  const totalRows = sheet ? sheet.getLastRow() : 2;
+
+  if (startRow > totalRows) {
+    props.deleteProperty('NEWDME_NEXT_ROW');
+    SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME scan already complete. Reset and re-run to start over.', 'Done', 5);
+    return;
+  }
+
+  const CHUNK = 1500;
+  const endRow = Math.min(startRow + CHUNK - 1, totalRows);
+
   runMasterSearchCore_({
     targetTabs: tabs,
     lookupTabs: [
-
       { name: "Ben", tab: "Ben Flags" },
       { name: "Jimmy", tab: "Jimmy Flags" },
       { name: "Selene", tab: "Selene Flags" },
@@ -71,18 +85,25 @@ function runNewLabsMasterSearch() {
       { name: "Dis/Wn", tab: "Disconnected" },
       { name: "DNC", tab: "DNC" },
       { name: "AI", tab: "DMEDesk Booked" },
-      { name: "Cleads", tab: "mirror for chasers" },
-      // { name: "MAIN", tab: "MAIN" },
-      // { name: "LABS", tab: "LABS" }
-
+      { name: "Cleads", tab: "mirror for chasers" }
     ],
-    toastSuffix: tabs.join(' & '),
-    startRow: 2,
-    endRow: 5000,
-    chunkSize: 3000
+    toastSuffix: `NEWDME rows ${startRow}–${endRow} of ${totalRows}`,
+    startRow: startRow,
+    endRow: endRow,
+    chunkSize: CHUNK
   });
-}
 
+  if (endRow < totalRows) {
+    props.setProperty('NEWDME_NEXT_ROW', String(endRow + 1));
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      `Chunk done (rows ${startRow}–${endRow}). Run again to continue from row ${endRow + 1}.`,
+      'Paused — run again', 8
+    );
+  } else {
+    props.deleteProperty('NEWDME_NEXT_ROW');
+    SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME scan complete.', 'Done', 5);
+  }
+}
 function runMasterSearchCore_(options) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -200,8 +221,9 @@ function runMasterSearchCore_(options) {
       if (!sheet || sheet.getLastRow() < 2) return;
 
       const lastRow = sheet.getLastRow();
-      const numRows = Math.min(lastRow - 1, options.rowlimit || Infinity);
-      if (numRows <= 0) return;
+      const startRow = options.startRow || 2;
+      const endRow = options.endRow || lastRow;
+      const numRows = Math.min(endRow, lastRow) - startRow + 1;      if (numRows <= 0) return;
 
       console.time(`Process_${tabName}`);
 
@@ -217,8 +239,7 @@ function runMasterSearchCore_(options) {
 
         // Get values for the entire sheet (Cols A to O)
         const maxCol = 15; // Col O (NPI)
-        const targetValues = sheet.getRange(2, 1, numRows, maxCol).getValues();
-
+        const targetValues = sheet.getRange(startRow, 1, numRows, maxCol).getValues();
         const outputRows = [];
 
         for (let i = 0; i < numRows; i++) {
@@ -275,7 +296,7 @@ function runMasterSearchCore_(options) {
 
         // High-Speed Bulk Write
         if (outputRows.length > 0) {
-          sheet.getRange(2, 1, outputRows.length, 3).setValues(outputRows);
+          sheet.getRange(startRow, 1, outputRows.length, 3).setValues(outputRows);
         }
         SpreadsheetApp.flush();
 
@@ -381,15 +402,15 @@ function reformatPhoneNumbers() {
     if (lastRow < 2) return;
 
     columnIndices.forEach(colIndex => {
-      // Process in chunks of 5000 to avoid timeout
-      const CHUNK = 5000;
+      // Process in chunks of 4000 to avoid timeout
+      const CHUNK = 4000;
       for (let startR = 2; startR <= lastRow; startR += CHUNK) {
         const count = Math.min(CHUNK, lastRow - startR + 1);
         const range = sheet.getRange(startR, colIndex, count, 1);
         const newValues = range.getValues().map(row => {
           const num = String(row[0] || '').replace(/\D/g, '');
           return (num.length === 10)
-            ? [`${num.slice(0, 3)}-${num.slice(3, 6)}-${num.slice(6, 10)}`]
+            ? [`${num.slice(0,3)}-${num.slice(3,6)}-${num.slice(6,10)}`]
             : [row[0]];
         });
         range.setValues(newValues);
@@ -592,4 +613,52 @@ function setRowHeightForBen() {
       sheet.autoResizeRow(i + 1);
     }
   }
+}
+function runNewDmeVsMainLabsSearch() {
+  const props = PropertiesService.getScriptProperties();
+  const startRow = parseInt(props.getProperty('NEWDME_MAINLABS_NEXT_ROW') || '2', 10);
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("NEWDME");
+  const totalRows = sheet ? sheet.getLastRow() : 2;
+
+  if (startRow > totalRows) {
+    props.deleteProperty('NEWDME_MAINLABS_NEXT_ROW');
+    SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME vs MAIN/LABS scan already complete. Reset to re-run.', 'Done', 5);
+    return;
+  }
+
+  const CHUNK = 1500;
+  const endRow = Math.min(startRow + CHUNK - 1, totalRows);
+
+  runMasterSearchCore_({
+    targetTabs: ["NEWDME"],
+    lookupTabs: [
+      { name: "MAIN", tab: "MAIN" },
+      { name: "LABS", tab: "LABS" }
+    ],
+    toastSuffix: `NEWDME vs MAIN/LABS rows ${startRow}–${endRow} of ${totalRows}`,
+    startRow: startRow,
+    endRow: endRow,
+    chunkSize: CHUNK
+  });
+
+  if (endRow < totalRows) {
+    props.setProperty('NEWDME_MAINLABS_NEXT_ROW', String(endRow + 1));
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+      `Chunk done (rows ${startRow}–${endRow}). Run again to continue from row ${endRow + 1}.`,
+      'Paused — run again', 8
+    );
+  } else {
+    props.deleteProperty('NEWDME_MAINLABS_NEXT_ROW');
+    SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME vs MAIN/LABS scan complete.', 'Done', 5);
+  }
+}
+
+function resetNewDmeVsMainLabsScan() {
+  PropertiesService.getScriptProperties().deleteProperty('NEWDME_MAINLABS_NEXT_ROW');
+  SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME vs MAIN/LABS scan reset. Next run starts from row 2.', 'Reset', 4);
+}
+function resetNewLabsScan() {
+  PropertiesService.getScriptProperties().deleteProperty('NEWDME_NEXT_ROW');
+  SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME scan reset. Next run starts from row 2.', 'Reset', 4);
 }
