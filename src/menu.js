@@ -71,7 +71,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 1500;
+  const CHUNK = 3500;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -96,7 +96,7 @@ function runNewLabsMasterSearch() {
   if (endRow < totalRows) {
     props.setProperty('NEWDME_NEXT_ROW', String(endRow + 1));
     SpreadsheetApp.getActiveSpreadsheet().toast(
-      `Chunk done (rows ${startRow}–${endRow}). Run again to continue from row ${endRow + 1}.`,
+      `NEWLABChunk done (rows ${startRow}–${endRow}). Run again to continue from row ${endRow + 1}.`,
       'Paused — run again', 8
     );
   } else {
@@ -238,9 +238,16 @@ function runMasterSearchCore_(options) {
         _backupColumns(ss, sheet, tabName, numRows);
 
         // Get values for the entire sheet (Cols A to O)
-        const maxCol = 15; // Col O (NPI)
+        // Get values for the entire sheet (Cols A to O)
+        const maxCol = 15;
         const targetValues = sheet.getRange(startRow, 1, numRows, maxCol).getValues();
+
+        // Existing results already written in A:C
+        const existingResults =
+          sheet.getRange(startRow, 1, numRows, 3).getValues();
+
         const outputRows = [];
+        let hasChanges = false;
 
         for (let i = 0; i < numRows; i++) {
           const npi = String(targetValues[i][COL_NPI - 1] || "").trim();
@@ -274,16 +281,32 @@ function runMasterSearchCore_(options) {
           } else {
             colA = flagMatch;
           }
+          const current = existingResults[i];
 
-          const rowResult = [colA, phone1Match, phone2Match];
+          const rowResult = [
+            mergeLabels(current[0], colA),
+            mergeLabels(current[1], phone1Match),
+            mergeLabels(current[2], phone2Match)
+          ];;
 
           // Save to cache
           if (npi || termName || termPhone1 || termPhone2) {
             processedCache.set(cacheKey, rowResult);
           }
 
+          
+
+          if (
+            current[0] !== rowResult[0] ||
+            current[1] !== rowResult[1] ||
+            current[2] !== rowResult[2]
+          ) {
+            existingResults[i] = rowResult;
+            hasChanges = true;
+          }
+
           outputRows.push(rowResult);
-        }
+          }
 
         // Check if target sheet size changed during processing
         if (sheet.getLastRow() !== lastRow) {
@@ -294,12 +317,14 @@ function runMasterSearchCore_(options) {
           return;
         }
 
-        // High-Speed Bulk Write
-        if (outputRows.length > 0) {
-          sheet.getRange(startRow, 1, outputRows.length, 3).setValues(outputRows);
-        }
-        SpreadsheetApp.flush();
+                // Only write rows if something actually changed
+        if (hasChanges) {
+          sheet
+            .getRange(startRow, 1, numRows, 3)
+            .setValues(existingResults);
 
+          SpreadsheetApp.flush();
+        }
       } finally {
         lock.releaseLock();
       }
@@ -349,6 +374,23 @@ function cleanPhone(val) {
   if (!val) return "";
   if (val instanceof Date) return "";
   return String(val).replace(/\D/g, "");
+}
+function mergeLabels(existing, incoming) {
+  const set = new Set();
+
+  String(existing || "")
+    .split(",")
+    .map(v => v.trim())
+    .filter(Boolean)
+    .forEach(v => set.add(v));
+
+  String(incoming || "")
+    .split(",")
+    .map(v => v.trim())
+    .filter(Boolean)
+    .forEach(v => set.add(v));
+
+  return Array.from(set).join(", ");
 }
 
 // =============================================================================
@@ -627,7 +669,7 @@ function runNewDmeVsMainLabsSearch() {
     return;
   }
 
-  const CHUNK = 1500;
+  const CHUNK = 3500;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
