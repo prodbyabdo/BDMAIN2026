@@ -71,7 +71,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 3500;
+  const CHUNK = 3600;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -669,7 +669,7 @@ function runNewDmeVsMainLabsSearch() {
     return;
   }
 
-  const CHUNK = 3500;
+  const CHUNK = 3600;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
