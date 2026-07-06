@@ -5,17 +5,15 @@
  * @return {Array<Array<string>>} The requested data.
  * @customfunction
  */
-   function cbgetnpi(range, fields = "company") {
+function cbgetnpi(range, fields = "company") {
   if (!range) return [["No Input"]];
 
-  // Normalize input: handles single cells, 1D arrays, and 2D arrays
   const grid = Array.isArray(range) 
     ? (Array.isArray(range[0]) ? range : [range]) 
     : [[range]];
 
   const requestedFields = fields.toLowerCase().split(",").map(f => f.trim());
   
-  // Extract unique NPIs
   const npiToFetch = [...new Set(grid.flat().map(cell => {
     if (!cell) return null;
     const match = cell.toString().match(/(\d{10})/);
@@ -53,6 +51,12 @@
         const { basic = {}, addresses = [], taxonomies = [] } = result;
         const addr = addresses[0] || {};
 
+        // ---- NEW: join all taxonomy descriptions with newline ----
+        const allTaxonomies = taxonomies
+          .map(t => t.desc)
+          .filter(Boolean)
+          .join("\n") || "N/A";
+
         const fieldValues = {
           company: basic.organization_name || "N/A",
           person: [
@@ -64,7 +68,8 @@
           companyphone: addr.telephone_number || "N/A",
           state: addr.state || "N/A",
           lastupdate: basic.last_updated || "N/A",
-          taxonomies_group: taxonomies[0]?.desc || "N/A",
+          taxonomies_group: taxonomies[0]?.desc || "N/A",   // kept for backward compatibility
+          taxonomies_all: allTaxonomies,                   // <-- NEW field
           enum: basic.enumeration_date || "N/A"
         };
 
@@ -75,7 +80,6 @@
     }
   }
 
-  // Map results back to the exact grid structure required by Sheets
   return grid.map(row => {
     return row.flatMap(cell => {
       if (!cell) return requestedFields.map(() => "");
@@ -96,21 +100,22 @@ function autofillNpiData() {
     return;
   }
 
-  const BATCH_SIZE  = 50;   // UrlFetchApp.fetchAll cap (safe limit)
+  const BATCH_SIZE  = 50;
   const NPI_COL     = 15;   // O
-  const UPDATE_COL  = 7;    // G  — UpdateDate (also used as "already filled" guard)
+  const UPDATE_COL  = 7;    // G  — UpdateDate (guard)
   const WRITE_START = 7;    // G  — first column we write into
-  const WRITE_WIDTH = 7;    // G–M (7 columns)
+  const WRITE_WIDTH = 8;    // <-- now 8 columns: G through N
 
-  // Field order matches write columns G → M exactly
+  // Field order matches write columns G → N exactly
   const FIELD_ORDER = [
-    "lastupdate",   // G — UpdateDate
-    "company",      // H — Legalbusinessname
-    "state",        // I — State
-    "companyphone", // J — OfficePhone
-    "person",       // K — AuthOfficialName
-    "phone",        // L — AuthPhone
-    "position",     // M — Position
+    "lastupdate",     // G
+    "company",        // H
+    "state",          // I
+    "companyphone",   // J
+    "person",         // K
+    "phone",          // L
+    "position",       // M
+    "taxonomies_all"  // N   <-- NEW: all taxonomy descriptions
   ];
   const FIELDS_STR = FIELD_ORDER.join(",");
 
@@ -120,12 +125,10 @@ function autofillNpiData() {
     return;
   }
 
-  // ── 1. Read NPI col and UpdateDate col in one shot ──────────────────────
   const npiValues    = sheet.getRange(2, NPI_COL,    lastRow - 1, 1).getValues();
   const updateValues = sheet.getRange(2, UPDATE_COL, lastRow - 1, 1).getValues();
 
-  // ── 2. Build work list: rows that have an NPI but no UpdateDate yet ──────
-  const workList = []; // { sheetRow, npi }
+  const workList = [];
 
   const extractNpi = (cell) => {
     if (!cell) return null;
@@ -139,7 +142,7 @@ function autofillNpiData() {
     const npi        = extractNpi(npiValues[i][0]);
     const hasUpdate  = String(updateValues[i][0] || "").trim() !== "";
     if (npi && !hasUpdate) {
-      workList.push({ sheetRow: i + 2, npi }); // +2: 1-indexed + skip header
+      workList.push({ sheetRow: i + 2, npi });
     }
   }
 
@@ -150,7 +153,6 @@ function autofillNpiData() {
 
   ss.toast(`Found ${workList.length} rows to fill. Starting...`, 'NPI Autofill', 4);
 
-  // ── 3. Process in batches ────────────────────────────────────────────────
   let filled  = 0;
   let errors  = 0;
   const totalBatches = Math.ceil(workList.length / BATCH_SIZE);
@@ -164,30 +166,25 @@ function autofillNpiData() {
       'NPI Autofill', 5
     );
 
-    // Extract just the NPI numbers for bgetnpi (as a 2D column array)
     const npiGrid = batch.map(item => [item.npi]);
 
     let results;
     try {
-      results = bgetnpi(npiGrid, FIELDS_STR);
+      results = cbgetnpi(npiGrid, FIELDS_STR);
     } catch (err) {
       console.error(`Batch ${batchIndex + 1} fetch failed: ${err.message}`);
       errors += batch.length;
       continue;
     }
 
-    // ── 4. Write each row's results back to the sheet ──────────────────────
-    // bgetnpi returns a 2D array: one row per NPI, one col per field
-    // Since we pass a single-column grid, results[i] = [f1, f2, f3, ...]
     for (let i = 0; i < batch.length; i++) {
-      const rowData = results[i]; // array of FIELD_ORDER.length values
+      const rowData = results[i];
 
       if (!rowData || rowData.length === 0) {
         errors++;
         continue;
       }
 
-      // Skip writing if fetch returned an error marker in the first field
       const firstVal = String(rowData[0] || "").trim();
       if (firstVal === "Fetch Error" || firstVal === "Not Found" || firstVal === "Error") {
         console.warn(`Row ${batch[i].sheetRow} NPI ${batch[i].npi}: ${firstVal} — skipping write.`);
@@ -209,4 +206,4 @@ function autofillNpiData() {
     `Done. Filled: ${filled} rows. Skipped/errors: ${errors}.`,
     'NPI Autofill Complete', 8
   );
-} 
+}

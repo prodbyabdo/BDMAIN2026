@@ -71,7 +71,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 3600;
+  const CHUNK = 3100;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -445,7 +445,7 @@ function reformatPhoneNumbers() {
 
     columnIndices.forEach(colIndex => {
       // Process in chunks of 4000 to avoid timeout
-      const CHUNK = 4000;
+      const CHUNK = 3500;
       for (let startR = 2; startR <= lastRow; startR += CHUNK) {
         const count = Math.min(CHUNK, lastRow - startR + 1);
         const range = sheet.getRange(startR, colIndex, count, 1);
