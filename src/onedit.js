@@ -38,7 +38,7 @@ const HEADER_TRIGGER = 'Send Lead to';
 const HEADER_FIRST_DATA = 'NAME';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const TARGET_TABS = ["MAIN", "LABS", "Ben Flags", "NI / Not Eligible"];
+const TARGET_TABS = [ "LABS", "Doctors", "NI / Not Eligible"];
 const COMMENT_COL = 6;   // Column F — auto-date + timestamp trigger
 const TIMESTAMP_COL = 17;  // Column Q
 const NAME_COL = 4;   // Column D

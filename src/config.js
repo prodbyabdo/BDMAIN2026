@@ -2,19 +2,15 @@
  * ═══════════════════════════════════════════════════════════════
  * COLUMN CONFIG — BD DME 2026
  * ═══════════════════════════════════════════════════════════════
- *
  * Single source of truth for ALL column indices used across the project.
  * All values are 1-based (as required by Apps Script getRange calls).
- *
  * ⚠️  If a column is added or moved in the spreadsheet, update
  *     THIS FILE ONLY — every script will pick up the change.
- *
  * Column letter reference:
  *   A=1  B=2  C=3  D=4  E=5  F=6  G=7  H=8  I=9  J=10
  *   K=11 L=12 M=13 N=14 O=15 P=16 Q=17
  * ═══════════════════════════════════════════════════════════════
  */
-
 // ── Main data sheet columns (MAIN, LABS, NEWDME, Ben Flags, etc.) ─────────────
 const COL_STATUS = 1;   // A — Search result / flag status written by runMasterSearch
 const COL_PHONE1_MATCH = 2;   // B — Phone 1 match result written by runMasterSearch
@@ -51,12 +47,9 @@ const COL_LOOKUP_WIDTH_MAX = 5;   // H–L — max width when all 5 lookup cols 
 const COL_IMPORT_NAME = 15;  // O — Meeting / business name
 const COL_IMPORT_PHONE = 16;  // P — Meeting phone number
 const COL_IMPORT_WIDTH = 2;   // O–P — width of the range to read
-
 // ── Deactivated sheet ─────────────────────────────────────────────────────────
 const COL_DEAC_NPI = 15;  // O — NPI number in the Deactivated tab
-
 // ── Composite helpers used across multiple files ──────────────────────────────
-
 /**
  * Columns that onEditInstallable will act on.
  * Any edit outside these columns is ignored immediately.

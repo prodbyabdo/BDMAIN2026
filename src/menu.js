@@ -27,7 +27,7 @@ function onOpen() {
 //   No DEAC     -> normal flag search
 // =============================================================================
 function runMasterSearch() {
-  const tabs = ["MAIN", "LABS"];
+  const tabs = ["MAIN" , "LABS"];
   const lookups = [
     { name: "Ben", tab: "Ben Flags" },
     { name: "Jimmy", tab: "Jimmy Flags" },
@@ -71,13 +71,14 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 3100;
+  const CHUNK = 3800;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
     targetTabs: tabs,
     lookupTabs: [
       { name: "Ben", tab: "Ben Flags" },
+      { name: "LABS", tab: "LABS" },
       { name: "Jimmy", tab: "Jimmy Flags" },
       { name: "Selene", tab: "Selene Flags" },
       { name: "Jane", tab: "Jane Flags" },
@@ -215,6 +216,16 @@ function runMasterSearchCore_(options) {
     // ---------------------------------------------------------------------------
     ss.toast(`Scanning ${toastSuffix}...`, "Search");
     const processedCache = new Map();
+    const labelCache = new WeakMap();
+    const getLabel_ = (matches) => {
+      if (!matches) return "";
+      let s = labelCache.get(matches);
+      if (s === undefined) {
+        s = Array.from(matches).join(", ");
+        labelCache.set(matches, s);
+      }
+      return s;
+    };
 
     targetTabs.forEach(tabName => {
       const sheet = ss.getSheetByName(tabName);
@@ -234,19 +245,15 @@ function runMasterSearchCore_(options) {
         return;
       }
 
-      try {
-        _backupColumns(ss, sheet, tabName, numRows);
-
-        // Get values for the entire sheet (Cols A to O)
+        try {
         // Get values for the entire sheet (Cols A to O)
         const maxCol = 15;
         const targetValues = sheet.getRange(startRow, 1, numRows, maxCol).getValues();
 
-        // Existing results already written in A:C
-        const existingResults =
-          sheet.getRange(startRow, 1, numRows, 3).getValues();
+        // OPTIMIZATION: Extract existing results directly from targetValues in-memory to eliminate a redundant API read
+        const existingResults = targetValues.map(row => [row[0], row[1], row[2]]);
 
-        const outputRows = [];
+          
         let hasChanges = false;
 
         for (let i = 0; i < numRows; i++) {
@@ -258,22 +265,28 @@ function runMasterSearchCore_(options) {
           const termPhone2 = cleanPhone(targetValues[i][COL_PHONE2 - 1]); // Col L
 
           // Cache Check: If already processed this exact lead, skip to save CPU
+          // Cache Check: If already processed this exact lead, skip to save CPU
           const cacheKey = (npi || "no_npi") + "|" + termName + "|" + termPhone1 + "|" + termPhone2;
           if ((npi || termName || termPhone1 || termPhone2) && processedCache.has(cacheKey)) {
-            outputRows.push(processedCache.get(cacheKey));
+            const cachedResult = processedCache.get(cacheKey);
+            const cur = existingResults[i];
+            if (cur[0] !== cachedResult[0] || cur[1] !== cachedResult[1] || cur[2] !== cachedResult[2]) {
+              existingResults[i] = cachedResult;
+              hasChanges = true;
+            }
             continue;
           }
 
           const isDeac = hasNpi && deactivatedNPIs.has(npi);
 
           const nameMatches = nameMap.get(termName);
-          const flagMatch = nameMatches ? Array.from(nameMatches).join(", ") : "";
+          const flagMatch = getLabel_(nameMatches);
 
           const phone1Matches = phoneMap.get(termPhone1);
-          const phone1Match = phone1Matches ? Array.from(phone1Matches).join(", ") : "";
+          const phone1Match = getLabel_(phone1Matches);
 
           const phone2Matches = phoneMap.get(termPhone2);
-          const phone2Match = phone2Matches ? Array.from(phone2Matches).join(", ") : "";
+          const phone2Match = getLabel_(phone2Matches);
 
           let colA = "";
           if (isDeac) {
@@ -319,6 +332,7 @@ function runMasterSearchCore_(options) {
 
                 // Only write rows if something actually changed
         if (hasChanges) {
+          _backupColumns(ss, sheet, tabName, startRow, numRows);
           sheet
             .getRange(startRow, 1, numRows, 3)
             .setValues(existingResults);
@@ -343,7 +357,7 @@ function runMasterSearchCore_(options) {
 // =============================================================================
 // SHARED HELPERS
 // =============================================================================
-function _backupColumns(ss, sheet, tabName, numRows) {
+function _backupColumns(ss, sheet, tabName, startRow, numRows) {
   const backupName = '_SEARCH_BACKUP';
   let backup = ss.getSheetByName(backupName);
   if (!backup) {
@@ -357,7 +371,7 @@ function _backupColumns(ss, sheet, tabName, numRows) {
 
   if (numRows > 0) {
     // High-speed atomic copy instead of slow chunked getValues/setValues
-    const sourceRange = sheet.getRange(2, 1, numRows, 3);
+    const sourceRange = sheet.getRange(startRow, 1, numRows, 3);
     const destRange = backup.getRange(2, 1);
     sourceRange.copyTo(destRange, SpreadsheetApp.CopyPasteType.PASTE_VALUES, false);
     SpreadsheetApp.flush();
@@ -376,6 +390,11 @@ function cleanPhone(val) {
   return String(val).replace(/\D/g, "");
 }
 function mergeLabels(existing, incoming) {
+  // OPTIMIZATION: Short-circuit early to avoid heavy Set/Split allocations for empty or identical values
+  if (!incoming) return existing || "";
+  if (!existing) return incoming || "";
+  if (existing === incoming) return existing;
+
   const set = new Set();
 
   String(existing || "")
@@ -434,8 +453,10 @@ function capitalizeHeadersBatch() {
 
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["NEWDME"];
+  const targetTabs = ["NEWDME", "DNC"];
   const columnIndices = [10, 12];
+
+  ss.toast(`Formatting phone numbers on ${targetTabs.join(' & ')}...`, "Clean & Format", 2);
 
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
@@ -444,8 +465,8 @@ function reformatPhoneNumbers() {
     if (lastRow < 2) return;
 
     columnIndices.forEach(colIndex => {
-      // Process in chunks of 4000 to avoid timeout
-      const CHUNK = 3500;
+      // Process in chunks to avoid timeout
+      const CHUNK = 5000;
       for (let startR = 2; startR <= lastRow; startR += CHUNK) {
         const count = Math.min(CHUNK, lastRow - startR + 1);
         const range = sheet.getRange(startR, colIndex, count, 1);
@@ -460,7 +481,7 @@ function reformatPhoneNumbers() {
       }
     });
   });
-  SpreadsheetApp.getActiveSpreadsheet().toast('Phone numbers formatted on NEWDME.');
+  ss.toast(`Phone numbers formatted on ${targetTabs.join(' & ')}.`, "Done", 5);
 }
 
 function unmergeAllCells() {
@@ -669,7 +690,7 @@ function runNewDmeVsMainLabsSearch() {
     return;
   }
 
-  const CHUNK = 3600;
+  const CHUNK = 4500;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -678,7 +699,7 @@ function runNewDmeVsMainLabsSearch() {
       { name: "MAIN", tab: "MAIN" },
       { name: "LABS", tab: "LABS" }
     ],
-    toastSuffix: `NEWDME vs MAIN/LABS rows ${startRow}–${endRow} of ${totalRows}`,
+    toastSuffix: `Wheelchairs vs MAIN/LABS rows ${startRow}–${endRow} of ${totalRows}`,
     startRow: startRow,
     endRow: endRow,
     chunkSize: CHUNK

@@ -5,7 +5,7 @@
  * @return {Array<Array<string>>} The requested data.
  * @customfunction
  */
-function cbgetnpi(range, fields = "company") {
+function dbgetnpi(range, fields = "company") {
   if (!range) return [["No Input"]];
 
   const grid = Array.isArray(range) 
@@ -67,6 +67,7 @@ function cbgetnpi(range, fields = "company") {
           phone : basic.authorized_official_telephone_number || "N/A",
           companyphone: addr.telephone_number || "N/A",
           state: addr.state || "N/A",
+          city: addr.city || "N/A",
           lastupdate: basic.last_updated || "N/A",
           taxonomies_group: taxonomies[0]?.desc || "N/A",   // kept for backward compatibility
           taxonomies_all: allTaxonomies,                   // <-- NEW field
