@@ -18,7 +18,23 @@ function onOpen() {
     .addItem('Create Filters', 'createLeadFilterViews')
     .addItem('Row Height Ben ', 'setRowHeightForBen')
     .addItem('Reset NEWLEADS Scan', 'resetNewLabsScan')
+    .addSeparator()
+    .addItem('📥 Download XLSX Copy', 'exportSheetAsXlsxPrompt')
     .addToUi();
+}
+
+/**
+ * Direct Zero-CPU XLSX Download Helper
+ */
+function exportSheetAsXlsxPrompt() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=xlsx`;
+  const html = `<div style="font-family: sans-serif; padding: 15px; text-align: center;">
+    <p style="font-size: 14px; margin-bottom: 20px;">Click below to download the entire workbook as <strong>.xlsx</strong>:</p>
+    <a href="${url}" target="_blank" style="display: inline-block; padding: 12px 24px; background: #1a73e8; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">📥 Download .xlsx File</a>
+  </div>`;
+  const htmlOutput = HtmlService.createHtmlOutput(html).setWidth(420).setHeight(160);
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Export Workbook as XLSX');
 }
 // =============================================================================
 // MASTER SEARCH (Optimized - Set-based O(1) lookups)
