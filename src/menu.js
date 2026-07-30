@@ -300,14 +300,12 @@ function runMasterSearchCore_(options) {
             mergeLabels(current[0], colA),
             mergeLabels(current[1], phone1Match),
             mergeLabels(current[2], phone2Match)
-          ];;
+          ];
 
           // Save to cache
           if (npi || termName || termPhone1 || termPhone2) {
             processedCache.set(cacheKey, rowResult);
           }
-
-          
 
           if (
             current[0] !== rowResult[0] ||
@@ -317,9 +315,7 @@ function runMasterSearchCore_(options) {
             existingResults[i] = rowResult;
             hasChanges = true;
           }
-
-          outputRows.push(rowResult);
-          }
+        }
 
         // Check if target sheet size changed during processing
         if (sheet.getLastRow() !== lastRow) {
