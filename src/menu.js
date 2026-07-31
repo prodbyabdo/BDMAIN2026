@@ -1,6 +1,11 @@
 /** 
  * Custom Menu
  */
+// PSEUDOCODE:
+//   on spreadsheet open ->
+//     build "Custom Tools" menu
+//     wire each menu item to its handler function by name (string, not reference)
+//   no data processing happens here — just UI wiring
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Custom Tools')
@@ -18,23 +23,7 @@ function onOpen() {
     .addItem('Create Filters', 'createLeadFilterViews')
     .addItem('Row Height Ben ', 'setRowHeightForBen')
     .addItem('Reset NEWLEADS Scan', 'resetNewLabsScan')
-    .addSeparator()
-    .addItem('📥 Download XLSX Copy', 'exportSheetAsXlsxPrompt')
     .addToUi();
-}
-
-/**
- * Direct Zero-CPU XLSX Download Helper
- */
-function exportSheetAsXlsxPrompt() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const url = `https://docs.google.com/spreadsheets/d/${ss.getId()}/export?format=xlsx`;
-  const html = `<div style="font-family: sans-serif; padding: 15px; text-align: center;">
-    <p style="font-size: 14px; margin-bottom: 20px;">Click below to download the entire workbook as <strong>.xlsx</strong>:</p>
-    <a href="${url}" target="_blank" style="display: inline-block; padding: 12px 24px; background: #1a73e8; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px;">📥 Download .xlsx File</a>
-  </div>`;
-  const htmlOutput = HtmlService.createHtmlOutput(html).setWidth(420).setHeight(160);
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, 'Export Workbook as XLSX');
 }
 // =============================================================================
 // MASTER SEARCH (Optimized - Set-based O(1) lookups)
@@ -42,6 +31,13 @@ function exportSheetAsXlsxPrompt() {
 //   DEAC only   -> "DEAC"
 //   No DEAC     -> normal flag search
 // =============================================================================
+
+// PSEUDOCODE:
+//   define target tabs = [MAIN, LABS]
+//   define lookup tabs = [Ben/Jimmy/Selene/Jane Flags, NI, Disconnected, Cleads, DNC, AI]
+//   if execution-logging wrapper exists -> run core search wrapped in logger
+//   else -> run core search directly
+//   (this is the "full scan" entry point — no row chunking/resuming)
 function runMasterSearch() {
   const tabs = ["MAIN" , "LABS"];
   const lookups = [
@@ -73,6 +69,14 @@ function runMasterSearch() {
   });
 }
 
+// PSEUDOCODE:
+//   read saved "next row to process" from script properties (default: row 2)
+//   if saved row > total rows on NEWDME -> scan already done, clear property, toast, exit
+//   compute this chunk's end row = min(startRow + CHUNK - 1, totalRows)
+//   run core search scoped to [startRow, endRow] on NEWDME vs Ben/LABS/Jimmy/etc.
+//   if more rows remain -> save new "next row" property, toast "run again to continue"
+//   else -> clear property, toast "scan complete"
+//   (this is the CHUNKED/RESUMABLE entry point for the large NEWDME tab)
 function runNewLabsMasterSearch() {
   const props = PropertiesService.getScriptProperties();
   const startRow = parseInt(props.getProperty('NEWDME_NEXT_ROW') || '2', 10);
@@ -87,7 +91,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 3800;
+  const CHUNK = 9950;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -121,6 +125,53 @@ function runNewLabsMasterSearch() {
     SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME scan complete.', 'Done', 5);
   }
 }
+
+// PSEUDOCODE (the shared engine used by all three "search" menu items):
+//   STEP 1 — LOAD LOOKUP DATA (single batched read, not one call per tab)
+//     for each configured lookup tab that exists -> queue its H:L range
+//     if IMPORT_DATA tab exists -> queue its O:P range (meeting names/phones)
+//     if Deactivated tab exists -> queue its O column (deactivated NPIs)
+//     batchGet all queued ranges in ONE API call
+//     split results back out into: lookupData{}, meetingRows[], deactivatedNPIs Set
+//
+//   STEP 2 — BUILD O(1) LOOKUP INDEXES
+//     nameMap:  cleaned business name -> Set of tab labels that mention it
+//     phoneMap: cleaned phone digits  -> Set of tab labels that mention it
+//     populate both maps from every lookup tab (name @ offset 0, phone1 @ offset 2, phone2 @ offset 4)
+//     also populate both maps from IMPORT_DATA meeting rows (label = "Meeting")
+//
+//   STEP 3 — SCAN EACH TARGET TAB (MAIN/LABS/NEWDME), ONE AT A TIME, LOCKED
+//     for each target tab:
+//       determine [startRow, endRow] — full tab, or a caller-specified chunk
+//       acquire a script-wide lock (skip this tab if another run holds it)
+//       read the tab's row data in ONE getRange call (cols A..O)
+//       extract existing col A/B/C values into an in-memory working copy
+//       for each row in the chunk:
+//         read NPI (col O), search name (col H), phone1 (col J), phone2 (col L)
+//         build a cache key from (npi|name|phone1|phone2)
+//         IF this exact key was already computed earlier in this same run:
+//           reuse the cached result; if it differs from what's currently in the
+//           sheet's working copy, mark that row changed
+//           (this is the "duplicate lead" fast path — skips recomputation AND
+//            still applies the correct result to every duplicate occurrence)
+//         ELSE (first time seeing this key):
+//           is this NPI in the deactivated set? -> col A becomes "DEAC"
+//           else -> look up name in nameMap, phone1/phone2 in phoneMap,
+//                   turn each Set of matching labels into a joined string
+//                   (join is memoized per-Set via labelCache so identical
+//                    match-sets across many rows don't re-stringify each time)
+//           merge each new value with whatever's already in that cell
+//           (merge = union of comma-separated labels, dedup'd)
+//           store this row's result in the cache for future duplicates
+//           if the merged result differs from what's currently there -> mark changed
+//       after the loop: verify the sheet's row count didn't change mid-run
+//         (guards against a concurrent import/delete corrupting the write)
+//       if anything actually changed in this chunk:
+//         snapshot cols A-C to a hidden backup tab BEFORE writing
+//         write the whole updated A:C block back in one setValues call
+//         flush so the write is visible immediately
+//       release the lock
+//   STEP 4 — final toast: "search complete"
 function runMasterSearchCore_(options) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -231,7 +282,12 @@ function runMasterSearchCore_(options) {
     // 2. Determine Tabs to Scan & Process Each Tab (Scoped Lock)
     // ---------------------------------------------------------------------------
     ss.toast(`Scanning ${toastSuffix}...`, "Search");
+    // processedCache: dedupes IDENTICAL leads seen more than once IN THIS RUN
+    // (key = npi|name|phone1|phone2) so repeated rows skip full recomputation
     const processedCache = new Map();
+    // labelCache: memoizes the (Array.from(set).join(", ")) string for a given
+    // Set object, since the SAME Set (e.g. everyone flagged only by "Ben") can
+    // be looked up thousands of times across a scan — build the string once.
     const labelCache = new WeakMap();
     const getLabel_ = (matches) => {
       if (!matches) return "";
@@ -272,6 +328,13 @@ function runMasterSearchCore_(options) {
           
         let hasChanges = false;
 
+        // PSEUDOCODE (per-row loop):
+        //   for each row in this chunk:
+        //     pull npi / termName / termPhone1 / termPhone2 from the raw row data
+        //     build cacheKey from those four values
+        //     if cacheKey already seen this run -> reuse cached result, apply if different, skip rest
+        //     else -> compute DEAC/name/phone matches fresh, merge with existing
+        //             cell values, cache the result, mark changed if different
         for (let i = 0; i < numRows; i++) {
           const npi = String(targetValues[i][COL_NPI - 1] || "").trim();
           const hasNpi = npi && npi !== "0";
@@ -280,7 +343,6 @@ function runMasterSearchCore_(options) {
           const termPhone1 = cleanPhone(targetValues[i][COL_PHONE1 - 1]); // Col J
           const termPhone2 = cleanPhone(targetValues[i][COL_PHONE2 - 1]); // Col L
 
-          // Cache Check: If already processed this exact lead, skip to save CPU
           // Cache Check: If already processed this exact lead, skip to save CPU
           const cacheKey = (npi || "no_npi") + "|" + termName + "|" + termPhone1 + "|" + termPhone2;
           if ((npi || termName || termPhone1 || termPhone2) && processedCache.has(cacheKey)) {
@@ -369,6 +431,12 @@ function runMasterSearchCore_(options) {
 // =============================================================================
 // SHARED HELPERS
 // =============================================================================
+
+// PSEUDOCODE:
+//   get or create a hidden "_SEARCH_BACKUP" tab
+//   clear it, write a header noting which tab/timestamp this backup is for
+//   fast-copy (copyTo, values only) the current A:C block into the backup
+//   (this is a "just in case" undo snapshot taken right before every write)
 function _backupColumns(ss, sheet, tabName, startRow, numRows) {
   const backupName = '_SEARCH_BACKUP';
   let backup = ss.getSheetByName(backupName);
@@ -390,17 +458,26 @@ function _backupColumns(ss, sheet, tabName, startRow, numRows) {
   }
 }
 
+// PSEUDOCODE: lowercase + trim a cell value for name matching; Dates and empties -> ""
 function clean(val) {
   if (!val) return "";
   if (val instanceof Date) return "";
   return String(val).toLowerCase().trim();
 }
 
+// PSEUDOCODE: strip everything but digits for phone matching; Dates and empties -> ""
 function cleanPhone(val) {
   if (!val) return "";
   if (val instanceof Date) return "";
   return String(val).replace(/\D/g, "");
 }
+
+// PSEUDOCODE:
+//   if incoming is empty -> return existing unchanged
+//   if existing is empty -> return incoming unchanged
+//   if they're identical strings -> return as-is (skip allocation)
+//   otherwise -> split both on commas, union into a Set (dedupes), rejoin
+//   (this is how col A/B/C accumulate multiple flag labels over repeated runs)
 function mergeLabels(existing, incoming) {
   // OPTIMIZATION: Short-circuit early to avoid heavy Set/Split allocations for empty or identical values
   if (!incoming) return existing || "";
@@ -427,6 +504,12 @@ function mergeLabels(existing, incoming) {
 // =============================================================================
 // REMAINING MENU FUNCTIONS (unchanged)
 // =============================================================================
+
+// PSEUDOCODE:
+//   only allow this on a whitelisted set of tabs (MAIN/LABS/NEWLABS/NEWDME/Ben Flags)
+//   find the "Legalbusinessname" and "AuthOfficialName" columns by header name
+//   for every data row -> uppercase + trim the value in those columns
+//   write the whole sheet back in one setValues call
 function capitalizeHeadersBatch() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
@@ -463,10 +546,20 @@ function capitalizeHeadersBatch() {
   SpreadsheetApp.getActiveSpreadsheet().toast('Capitalization complete!', 'Success');
 }
 
+// PSEUDOCODE:
+//   for each target tab (NEWDME, DNC):
+//     for each chunk of up to CHUNK rows:
+//       read cols J:L in one getRange call (J and L are the two phone columns,
+//       K rides along untouched in between so only one read/write is needed)
+//       for each row -> strip non-digits from J and L; if exactly 10 digits,
+//       reformat as XXX-XXX-XXXX; leave anything else as-is
+//       only write the chunk back if something in it actually changed
+//   flush once at the very end (not per-chunk) and toast completion
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const targetTabs = ["NEWDME", "DNC"];
-  const columnIndices = [10, 12];
+  const startCol = 10; // J
+  const width = 3;     // J, K, L — reads both phone cols in one pass, K rides along untouched
 
   ss.toast(`Formatting phone numbers on ${targetTabs.join(' & ')}...`, "Clean & Format", 2);
 
@@ -476,31 +569,45 @@ function reformatPhoneNumbers() {
     const lastRow = Math.min(sheet.getLastRow(), 25000); // cap safety
     if (lastRow < 2) return;
 
-    columnIndices.forEach(colIndex => {
-      // Process in chunks to avoid timeout
-      const CHUNK = 5000;
-      for (let startR = 2; startR <= lastRow; startR += CHUNK) {
-        const count = Math.min(CHUNK, lastRow - startR + 1);
-        const range = sheet.getRange(startR, colIndex, count, 1);
-        const newValues = range.getValues().map(row => {
-          const num = String(row[0] || '').replace(/\D/g, '');
-          return (num.length === 10)
-            ? [`${num.slice(0,3)}-${num.slice(3,6)}-${num.slice(6,10)}`]
-            : [row[0]];
+    const CHUNK = 8990;
+    for (let startR = 2; startR <= lastRow; startR += CHUNK) {
+      const count = Math.min(CHUNK, lastRow - startR + 1);
+      const range = sheet.getRange(startR, startCol, count, width);
+      const values = range.getValues();
+      let changed = false;
+
+      const newValues = values.map(row => {
+        const newRow = row;
+        [0, 2].forEach(offset => {
+          const num = String(row[offset] || '').replace(/\D/g, '');
+          if (num.length === 10) {
+            const formatted = `${num.slice(0,3)}-${num.slice(3,6)}-${num.slice(6,10)}`;
+            if (formatted !== row[offset]) {
+              newRow[offset] = formatted;
+              changed = true;
+            }
+          }
         });
+        return newRow;
+      });
+
+      if (changed) {
         range.setValues(newValues);
-        SpreadsheetApp.flush();
       }
-    });
+    }
   });
+
+  SpreadsheetApp.flush();
   ss.toast(`Phone numbers formatted on ${targetTabs.join(' & ')}.`, "Done", 5);
 }
 
+// PSEUDOCODE: unmerge every merged cell range on the currently active sheet
 function unmergeAllCells() {
   SpreadsheetApp.getActiveSpreadsheet().getActiveSheet()
     .getMergedRanges().forEach(r => r.breakApart());
 }
 
+// PSEUDOCODE: confirm with the user, then clear all conditional formatting rules on the active sheet
 function clearCurrentTabFormatting() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
   const ui = SpreadsheetApp.getUi();
@@ -511,6 +618,14 @@ function clearCurrentTabFormatting() {
 /**
  * ACTION 1: Scans every cell in the CURRENT sheet and fixes timestamp formats.
  */
+// PSEUDOCODE:
+//   only check the columns known to hold timestamps (F and Q)
+//   for each of those columns -> read the whole column's values in one call
+//   for each cell -> skip empties; only bother normalizing if it "looks like"
+//     a timestamp (contains "/" and either ":" or "gmt")
+//   if normalizing actually changed the string -> mark it and count it
+//   write each changed column back in one setValues call (only if it changed)
+//   toast how many cells were normalized (or that none needed it)
 function normalizeActiveSheetTimestamps() {
   const sheet = SpreadsheetApp.getActiveSheet();
   const lastRow = sheet.getLastRow();
@@ -576,6 +691,7 @@ function normalizeActiveSheetTimestamps() {
  * Normalizes, Sorts Newest-to-Oldest, and keeps 1 per hour.
  * Note: Assumes America/New_York or user's appsscript.json timezone (Africa/Cairo)
  */
+// PSEUDOCODE: thin wrapper — run the real logic wrapped in the execution logger if it exists, else run it directly
 function normalizeAndReverseTimestamps() {
   if (typeof runWithExecutionLog_ === 'function') {
     return runWithExecutionLog_('normalizeAndReverseTimestamps', { trigger: 'menu' }, _normalizeAndReverseTimestampsCore);
@@ -583,6 +699,18 @@ function normalizeAndReverseTimestamps() {
   return _normalizeAndReverseTimestampsCore();
 }
 
+// PSEUDOCODE:
+//   for each target tab (MAIN, LABS, Ben Flags, NI / Not Eligible):
+//     read the whole timestamp column (Q) in one call
+//     for each cell:
+//       split its multi-line content into individual timestamp lines
+//       normalize each line's format via smartNormalizer
+//       build a Date object from each normalized line (for sorting)
+//       separate lines into "parseable" (valid date) vs "unparseable" (junk/text)
+//       sort parseable lines NEWEST first
+//       dedupe: keep only the latest line per (date+hour) bucket
+//       rebuild the cell as [deduped, sorted parseable lines] + [unparseable lines]
+//     write the whole column back in one setValues call
 function _normalizeAndReverseTimestampsCore() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const targetTabs = ["MAIN", "LABS", "Ben Flags", "NI / Not Eligible"];
@@ -645,6 +773,13 @@ function _normalizeAndReverseTimestampsCore() {
  * THE CORE ENGINE: Extracts and normalizes a timestamp from a string.
  * Handles row 312 style: "Some text 4/9/2026 22:17:59"
  */
+// PSEUDOCODE:
+//   1. try to regex-match a "M/D/YYYY H:MM(:SS)? (AM/PM)?" pattern anywhere in the string
+//      if found -> convert to 24-hour time, zero-pad, return "M/D/YYYY H:MM:SS"
+//   2. else, try parsing the whole string as a native JS Date (fallback for
+//      Date-object-style strings like "Wed Apr 01...")
+//      if that parses -> reformat to the same "M/D/YYYY H:MM:SS" shape
+//   3. else -> give up, return the original string unchanged
 function smartNormalizer(input) {
   if (!input || typeof input !== "string") return input;
 
@@ -674,6 +809,8 @@ function smartNormalizer(input) {
 
   return input; // Return original if no date found
 }
+
+// PSEUDOCODE: on the active sheet, find every row where col D === "Ben" and auto-resize that row's height
 function setRowHeightForBen() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet();
@@ -689,6 +826,16 @@ function setRowHeightForBen() {
     }
   }
 }
+
+// PSEUDOCODE:
+//   read saved "next row to process" from script properties (default: row 2)
+//   if saved row > total NEWDME rows -> scan already done, clear property, toast, exit
+//   compute this chunk's end row = min(startRow + CHUNK - 1, totalRows)
+//   run core search scoped to [startRow, endRow], but ONLY vs MAIN and LABS
+//   (this is a narrower cross-check than runNewLabsMasterSearch — just NEWDME
+//    against the two main tabs, not against every flag/status tab)
+//   if more rows remain -> save new "next row" property, toast "run again"
+//   else -> clear property, toast "scan complete"
 function runNewDmeVsMainLabsSearch() {
   const props = PropertiesService.getScriptProperties();
   const startRow = parseInt(props.getProperty('NEWDME_MAINLABS_NEXT_ROW') || '2', 10);
@@ -702,7 +849,7 @@ function runNewDmeVsMainLabsSearch() {
     return;
   }
 
-  const CHUNK = 4500;
+  const CHUNK = 8700;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -729,10 +876,13 @@ function runNewDmeVsMainLabsSearch() {
   }
 }
 
+// PSEUDOCODE: clear the saved resume-point for the MAIN/LABS-vs-NEWDME scan so the next run starts at row 2
 function resetNewDmeVsMainLabsScan() {
   PropertiesService.getScriptProperties().deleteProperty('NEWDME_MAINLABS_NEXT_ROW');
   SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME vs MAIN/LABS scan reset. Next run starts from row 2.', 'Reset', 4);
 }
+
+// PSEUDOCODE: clear the saved resume-point for the NEWDME full-lookup scan so the next run starts at row 2
 function resetNewLabsScan() {
   PropertiesService.getScriptProperties().deleteProperty('NEWDME_NEXT_ROW');
   SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME scan reset. Next run starts from row 2.', 'Reset', 4);

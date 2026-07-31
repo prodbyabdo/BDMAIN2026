@@ -3,7 +3,7 @@
  * Zero CPU overhead on Apps Script execution.
  */
 
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,7 +21,14 @@ try {
   const nodeExe = `C:\\Users\\ben.arthur\\node-v24.14.1-win-x64\\node.exe`;
   const claspJs = `C:\\Users\\ben.arthur\\node-v24.14.1-win-x64\\node_modules\\@google\\clasp\\build\\src\\index.js`;
 
-  const output = execSync(`"${nodeExe}" "${claspJs}" logs --json`, { encoding: 'utf8' });
+  const result = spawnSync(nodeExe, [claspJs, 'logs', '--json'], { encoding: 'utf8' });
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `Exit code ${result.status}`);
+  }
+
+  const output = result.stdout;
 
   fs.writeFileSync(LOG_FILE, output);
   fs.writeFileSync(LATEST_LOG_FILE, output);
