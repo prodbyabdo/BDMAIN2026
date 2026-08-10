@@ -38,11 +38,11 @@ const HEADER_TRIGGER = 'Send Lead to';
 const HEADER_FIRST_DATA = 'NAME';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const TARGET_TABS = [ "LABS", "Doctors", "NI / Not Eligible"];
+const EXCLUDED_TABS = ["LOGS", "IMPORT_DATA", "Deactivated", "SCRIPT_CATALOG", "EXECUTION_LOG"];
 const COMMENT_COL = 6;   // Column F — auto-date + timestamp trigger
 const TIMESTAMP_COL = 17;  // Column Q
 const NAME_COL = 4;   // Column D
-const COOLDOWN_SECONDS = 60;
+const COOLDOWN_SECONDS = 2;   // 2s dedup window to allow consecutive user edits
 
 // =============================================================================
 // UNIFIED onEdit HANDLER
@@ -59,8 +59,8 @@ function onEditInstallable(e) {
   const sheet = e.range.getSheet();
   const sheetName = sheet.getName();
 
-  // ── GUARD 2: Must be a target tab, must be a data row ────────────────────
-  if (!TARGET_TABS.includes(sheetName)) return;
+  // ── GUARD 2: Exclude system tabs, must be a data row ──────────────────────
+  if (EXCLUDED_TABS.includes(sheetName)) return;
   if (row <= 1) return;
 
   // ── GUARD 3: Ignore programmatic write-back columns ───────────────────────
@@ -183,27 +183,25 @@ function _handleCommentEdit(e, sheet, sheetName, col, row) {
     sheet.getRange(row, TIMESTAMP_COL).setValue(newTS);
 
     // Auto-date in Column F
-    if (colDValue) {
-      const isDeletion = cellValue === "" || cellValue === "-";
+    const isDeletion = cellValue === "" || cellValue === "-";
 
-      if (!isDeletion) {
-        const month = now.getMonth() + 1;
-        const day = now.getDate();
-        const dateSuffix = ` ${month}/${day}`;
+    if (!isDeletion) {
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const dateSuffix = ` ${month}/${day}`;
 
-        const lines = cellValue.split("\n");
-        const lastLine = lines[lines.length - 1].trim();
+      const lines = cellValue.split("\n");
+      const lastLine = lines[lines.length - 1].trim();
 
-        const todayRegex = new RegExp(`(?:^|\\s)${month}\\/${day}(?:\\s|$)`);
-        const lastLineHasToday = todayRegex.test(lastLine);
+      const todayRegex = new RegExp(`(?:^|\\s)${month}\\/${day}(?:\\s|$)`);
+      const lastLineHasToday = todayRegex.test(lastLine);
 
-        if (!lastLineHasToday) {
-          // Mark that WE are writing Col F — so the re-trigger can skip
-          cache.put(`selfwrite_${sheetName}_${row}_${COMMENT_COL}`, '1', 10);
-          lines[lines.length - 1] = lines[lines.length - 1].trimEnd() + dateSuffix;
-          sheet.getRange(row, COMMENT_COL).setValue(lines.join("\n"));
-          isDateWritten = true;
-        }
+      if (!lastLineHasToday) {
+        // Mark that WE are writing Col F — so the re-trigger can skip
+        cache.put(`selfwrite_${sheetName}_${row}_${COMMENT_COL}`, '1', 10);
+        lines[lines.length - 1] = lines[lines.length - 1].trimEnd() + dateSuffix;
+        sheet.getRange(row, COMMENT_COL).setValue(lines.join("\n"));
+        isDateWritten = true;
       }
     }
 
