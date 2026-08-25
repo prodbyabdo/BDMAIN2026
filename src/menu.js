@@ -34,7 +34,7 @@ function onOpen() {
 
 //  
 //   define target tabs = [MAIN, LABS]
-//   define lookup tabs = [Ben/Jimmy/Selene/Jane Flags, NI, Disconnected, DNC, AI]
+//   define lookup tabs = [Ben/Jimmy/Jasmine/Nora/Selene/Jane Flags, NI, Disconnected, DNC, AI]
 //   if execution-logging wrapper exists -> run core search wrapped in logger
 //   else -> run core search directly
 //   (this is the "full scan" entry point — no row chunking/resuming)
@@ -46,6 +46,7 @@ function runMasterSearch() {
     { name: "Selene", tab: "Selene Flags" },
     { name: "Jasmine", tab: "Jasmine Flags" },
     { name: "Jane", tab: "Jane Flags" },
+    { name: "Nora", tab: "Nora Flags" },
     { name: "NI", tab: "NI / Not Eligible" },
     { name: "Dis/Wn", tab: "Disconnected" },
     { name: "DNC", tab: "DNC" },
@@ -81,8 +82,8 @@ function runNewLabsMasterSearch() {
   const props = PropertiesService.getScriptProperties();
   const startRow = parseInt(props.getProperty('NEWDME_NEXT_ROW') || '2', 10);
 
-  const tabs = ["Assisted + Senior "];
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Assisted + Senior ");
+  const tabs = ["NEWDME"];
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("NEWDME");
   const totalRows = sheet ? sheet.getLastRow() : 2;
 
   if (startRow > totalRows) {
@@ -91,7 +92,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 10950;
+  const CHUNK = 7950;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -103,6 +104,7 @@ function runNewLabsMasterSearch() {
       { name: "Selene", tab: "Selene Flags" },
       { name: "Jasmine", tab: "Jasmine Flags" },
       { name: "Jane", tab: "Jane Flags" },
+      { name: "Nora", tab: "Nora Flags" },
       { name: "NI", tab: "NI / Not Eligible" },
       { name: "Dis/Wn", tab: "Disconnected" },
       { name: "DNC", tab: "DNC" },
@@ -557,7 +559,7 @@ function capitalizeHeadersBatch() {
 //   flush once at the very end (not per-chunk) and toast completion
 function reformatPhoneNumbers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const targetTabs = ["Assisted + Senior "];
+  const targetTabs = ["NEWDME"];
   const startCol = 10; // J
   const width = 3;     // J, K, L — reads both phone cols in one pass, K rides along untouched
 
@@ -569,7 +571,7 @@ function reformatPhoneNumbers() {
     const lastRow = Math.min(sheet.getLastRow(), 25000); // cap safety
     if (lastRow < 2) return;
 
-    const CHUNK = 10890;
+    const CHUNK = 9890;
     for (let startR = 2; startR <= lastRow; startR += CHUNK) {
       const count = Math.min(CHUNK, lastRow - startR + 1);
       const range = sheet.getRange(startR, startCol, count, width);
@@ -840,7 +842,7 @@ function runNewDmeVsMainLabsSearch() {
   const props = PropertiesService.getScriptProperties();
   const startRow = parseInt(props.getProperty('NEWDME_MAINLABS_NEXT_ROW') || '2', 10);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Assisted + Senior ");
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("NEWDME");
   const totalRows = sheet ? sheet.getLastRow() : 2;
 
   if (startRow > totalRows) {
@@ -849,11 +851,11 @@ function runNewDmeVsMainLabsSearch() {
     return;
   }
 
-  const CHUNK = 7800;
+  const CHUNK = 8800;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
-    targetTabs: ["Assisted + Senior "],
+    targetTabs: ["NEWLABS"],
     lookupTabs: [
       { name: "MAIN", tab: "MAIN" },
       { name: "LABS", tab: "LABS" }
