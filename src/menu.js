@@ -92,7 +92,7 @@ function runNewLabsMasterSearch() {
     return;
   }
 
-  const CHUNK = 7950;
+  const CHUNK = 8950;
   const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
   runMasterSearchCore_({
@@ -568,10 +568,10 @@ function reformatPhoneNumbers() {
   targetTabs.forEach(tabName => {
     const sheet = ss.getSheetByName(tabName);
     if (!sheet) return;
-    const lastRow = Math.min(sheet.getLastRow(), 25000); // cap safety
+    const lastRow = Math.min(sheet.getLastRow(), 50000); // cap safety
     if (lastRow < 2) return;
 
-    const CHUNK = 9890;
+    const CHUNK = 19990;
     for (let startR = 2; startR <= lastRow; startR += CHUNK) {
       const count = Math.min(CHUNK, lastRow - startR + 1);
       const range = sheet.getRange(startR, startCol, count, width);
@@ -850,21 +850,23 @@ function runNewDmeVsMainLabsSearch() {
     SpreadsheetApp.getActiveSpreadsheet().toast('NEWDME vs MAIN/LABS scan already complete. Reset to re-run.', 'Done', 5);
     return;
   }
+const CHUNK = 8800;
+const endRow = Math.min(startRow + CHUNK - 1, totalRows);
 
-  const CHUNK = 8800;
-  const endRow = Math.min(startRow + CHUNK - 1, totalRows);
+// 1. Declare targetTabs outside the configuration object so it can be referenced
+const targetTabs = ["NEWDME"];
 
-  runMasterSearchCore_({
-    targetTabs: ["NEWLABS"],
-    lookupTabs: [
-      { name: "MAIN", tab: "MAIN" },
-      { name: "LABS", tab: "LABS" }
-    ],
-    toastSuffix: `Wheelchairs vs MAIN/LABS rows ${startRow}–${endRow} of ${totalRows}`,
-    startRow: startRow,
-    endRow: endRow,
-    chunkSize: CHUNK
-  });
+runMasterSearchCore_({
+  targetTabs: targetTabs,
+  lookupTabs: [
+    { name: "MAIN", tab: "MAIN" },
+    { name: "LABS", tab: "LABS" }
+  ],
+  toastSuffix: `${targetTabs[0]} vs MAIN/LABS rows ${startRow}–${endRow} of ${totalRows}`,
+  startRow: startRow,
+  endRow: endRow,
+  chunkSize: CHUNK
+});
 
   if (endRow < totalRows) {
     props.setProperty('NEWDME_MAINLABS_NEXT_ROW', String(endRow + 1));
